@@ -239,6 +239,8 @@ class SaleOrder(models.Model):
     amount_to_invoice = fields.Monetary(string="Un-invoiced Balance", compute='_compute_amount_to_invoice')
     amount_invoiced = fields.Monetary(string="Already invoiced", compute='_compute_amount_invoiced')
 
+    # TODO add extra field for loyalty points
+
     invoice_count = fields.Integer(string="Invoice Count", compute='_get_invoiced')
     invoice_ids = fields.Many2many(
         comodel_name='account.move',
@@ -490,6 +492,7 @@ class SaleOrder(models.Model):
                 )
             order.team_id = cached_teams[key]
 
+    # ToDo adapt to calculate loyalty points and possible discount
     @api.depends('order_line.price_subtotal', 'currency_id', 'company_id', 'payment_term_id')
     def _compute_amounts(self):
         AccountTax = self.env['account.tax']
