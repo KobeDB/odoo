@@ -1,0 +1,93 @@
+
+<HTML>
+    <HEAD>
+        <TITLE> CloneDigger Report </TITLE>
+        <script type="text/javascript">
+        function unhide(divID) {
+            var item = document.getElementById(divID);
+            if (item) {
+                item.className=(item.className=='hidden')?'unhidden':'hidden';
+            }
+        }
+</script>
+
+<style type="text/css">
+.hidden { display: none; }
+.unhidden { display: block; }
+.preformatted {
+        border: 1px dashed #3c78b5;
+    font-size: 11px;
+        font-family: Courier;
+    margin: 10px;
+        line-height: 13px;
+}
+.preformattedHeader {
+    background-color: #f0f0f0;
+        border-bottom: 1px dashed #3c78b5;
+    padding: 3px;
+        text-align: center;
+}
+.preformattedContent {
+    background-color: #f0f0f0;
+    padding: 3px;
+}
+<!--
+<div class="preformatted"><div class="preformattedContent">
+<pre>Clone Digger
+</pre>
+</div></div>
+-->
+
+</style>
+
+    </HEAD>
+    <BODY>
+    <P> <FONT COLOR=RED> Error: can't parse "PycharmProjects/odoo/addons/sale/models/crm_team.py" <BR>: Traceback (most recent call last):<BR>  File "/home/jens/.local/lib/python2.7/site-packages/clonedigger/clonedigger.py", line 150, in parse_file<BR>    source_file = supplier(file_name, func_prefixes)<BR>  File "/home/jens/.local/lib/python2.7/site-packages/clonedigger/python_compiler.py", line 182, in __init__<BR>    self._setTree(rec_build_tree(compiler.parseFile(file_name)))<BR>  File "/usr/lib/python2.7/compiler/transformer.py", line 47, in parseFile<BR>    return parse(src)<BR>  File "/usr/lib/python2.7/compiler/transformer.py", line 51, in parse<BR>    return Transformer().parsesuite(buf)<BR>  File "/usr/lib/python2.7/compiler/transformer.py", line 128, in parsesuite<BR>    return self.transform(parser.suite(text))<BR>  File "<string>", line 123<BR>    return SQL(f"({GraphModel._table_query}) AS {GraphModel._table}")<BR>                                                                   ^<BR>SyntaxError: invalid syntax<BR> </FONT> </P>
+<P> <FONT COLOR=RED> Error: can't parse "PycharmProjects/odoo/addons/sale/models/sale_order.py" <BR>: Traceback (most recent call last):<BR>  File "/home/jens/.local/lib/python2.7/site-packages/clonedigger/clonedigger.py", line 150, in parse_file<BR>    source_file = supplier(file_name, func_prefixes)<BR>  File "/home/jens/.local/lib/python2.7/site-packages/clonedigger/python_compiler.py", line 182, in __init__<BR>    self._setTree(rec_build_tree(compiler.parseFile(file_name)))<BR>  File "/usr/lib/python2.7/compiler/transformer.py", line 47, in parseFile<BR>    return parse(src)<BR>  File "/usr/lib/python2.7/compiler/transformer.py", line 51, in parse<BR>    return Transformer().parsesuite(buf)<BR>  File "/usr/lib/python2.7/compiler/transformer.py", line 128, in parsesuite<BR>    return self.transform(parser.suite(text))<BR>  File "<string>", line 336<BR>    name = f'{name} - {order.partner_id.name}'<BR>                                             ^<BR>SyntaxError: invalid syntax<BR> </FONT> </P>
+<P> <FONT COLOR=RED> Error: can't parse "PycharmProjects/odoo/addons/sale/models/ir_config_parameter.py" <BR>: Traceback (most recent call last):<BR>  File "/home/jens/.local/lib/python2.7/site-packages/clonedigger/clonedigger.py", line 150, in parse_file<BR>    source_file = supplier(file_name, func_prefixes)<BR>  File "/home/jens/.local/lib/python2.7/site-packages/clonedigger/python_compiler.py", line 182, in __init__<BR>    self._setTree(rec_build_tree(compiler.parseFile(file_name)))<BR>  File "/usr/lib/python2.7/compiler/transformer.py", line 47, in parseFile<BR>    return parse(src)<BR>  File "/usr/lib/python2.7/compiler/transformer.py", line 51, in parse<BR>    return Transformer().parsesuite(buf)<BR>  File "/usr/lib/python2.7/compiler/transformer.py", line 128, in parsesuite<BR>    return self.transform(parser.suite(text))<BR>  File "<string>", line 14<BR>    and (send_invoice_cron := self.env.ref('sale.send_invoice_cron', raise_if_not_found=False))<BR>                           ^<BR>SyntaxError: invalid syntax<BR> </FONT> </P>
+<P> <FONT COLOR=RED> Error: can't parse "PycharmProjects/odoo/addons/sale/models/payment_transaction.py" <BR>: Traceback (most recent call last):<BR>  File "/home/jens/.local/lib/python2.7/site-packages/clonedigger/clonedigger.py", line 150, in parse_file<BR>    source_file = supplier(file_name, func_prefixes)<BR>  File "/home/jens/.local/lib/python2.7/site-packages/clonedigger/python_compiler.py", line 182, in __init__<BR>    self._setTree(rec_build_tree(compiler.parseFile(file_name)))<BR>  File "/usr/lib/python2.7/compiler/transformer.py", line 47, in parseFile<BR>    return parse(src)<BR>  File "/usr/lib/python2.7/compiler/transformer.py", line 51, in parse<BR>    return Transformer().parsesuite(buf)<BR>  File "/usr/lib/python2.7/compiler/transformer.py", line 128, in parsesuite<BR>    return self.transform(parser.suite(text))<BR>  File "<string>", line 78<BR>    if remaining_orders := (authorized_tx.sale_order_ids - confirmed_orders):<BR>                         ^<BR>SyntaxError: invalid syntax<BR> </FONT> </P>
+<P> <FONT COLOR=RED> Error: can't parse "PycharmProjects/odoo/addons/sale/models/sale_order_line.py" <BR>: Traceback (most recent call last):<BR>  File "/home/jens/.local/lib/python2.7/site-packages/clonedigger/clonedigger.py", line 150, in parse_file<BR>    source_file = supplier(file_name, func_prefixes)<BR>  File "/home/jens/.local/lib/python2.7/site-packages/clonedigger/python_compiler.py", line 182, in __init__<BR>    self._setTree(rec_build_tree(compiler.parseFile(file_name)))<BR>  File "/usr/lib/python2.7/compiler/transformer.py", line 47, in parseFile<BR>    return parse(src)<BR>  File "/usr/lib/python2.7/compiler/transformer.py", line 51, in parse<BR>    return Transformer().parsesuite(buf)<BR>  File "/usr/lib/python2.7/compiler/transformer.py", line 128, in parsesuite<BR>    return self.transform(parser.suite(text))<BR>  File "<string>", line 321<BR>    name = f'{name} {additional_name}'<BR>                                     ^<BR>SyntaxError: invalid syntax<BR> </FONT> </P>
+<P> <FONT COLOR=RED> Error: can't parse "PycharmProjects/odoo/addons/sale/models/product_template.py" <BR>: Traceback (most recent call last):<BR>  File "/home/jens/.local/lib/python2.7/site-packages/clonedigger/clonedigger.py", line 150, in parse_file<BR>    source_file = supplier(file_name, func_prefixes)<BR>  File "/home/jens/.local/lib/python2.7/site-packages/clonedigger/python_compiler.py", line 182, in __init__<BR>    self._setTree(rec_build_tree(compiler.parseFile(file_name)))<BR>  File "/usr/lib/python2.7/compiler/transformer.py", line 47, in parseFile<BR>    return parse(src)<BR>  File "/usr/lib/python2.7/compiler/transformer.py", line 51, in parse<BR>    return Transformer().parsesuite(buf)<BR>  File "/usr/lib/python2.7/compiler/transformer.py", line 128, in parsesuite<BR>    return self.transform(parser.suite(text))<BR>  File "<string>", line 75<BR>    tooltip = f'{tooltip} {invoicing_tooltip}' if tooltip else invoicing_tooltip<BR>                                             ^<BR>SyntaxError: invalid syntax<BR> </FONT> </P>
+    
+    <P>Source files: 12</P>
+        <a href = "javascript:unhide('files');">Click here to show/hide file names</a><div id="files" class="hidden"><P><B>Source files:</B><BR>PycharmProjects/odoo/addons/sale/models/account_move.py, <BR>PycharmProjects/odoo/addons/sale/models/res_partner.py, <BR>PycharmProjects/odoo/addons/sale/models/payment_provider.py, <BR>PycharmProjects/odoo/addons/sale/models/res_company.py, <BR>PycharmProjects/odoo/addons/sale/models/product_category.py, <BR>PycharmProjects/odoo/addons/sale/models/product_document.py, <BR>PycharmProjects/odoo/addons/sale/models/product_product.py, <BR>PycharmProjects/odoo/addons/sale/models/account_move_line.py, <BR>PycharmProjects/odoo/addons/sale/models/utm_campaign.py, <BR>PycharmProjects/odoo/addons/sale/models/analytic.py, <BR>PycharmProjects/odoo/addons/sale/models/chart_template.py, <BR>PycharmProjects/odoo/addons/sale/models/__init__.py</P></div>
+        <P>Clones detected: 1</P>
+        <P>10 of 542 lines are duplicates (1.85%) </P>
+<P>
+<B>Parameters<BR> </B>
+clustering_threshold = 10<BR>
+distance_threshold = 5<BR>
+size_threshold = 5<BR>
+hashing_depth = 1<BR>
+clusterize_using_hash = False<BR>
+clusterize_using_dcup = False<BR>
+</P> 
+        
+    <B>Time elapsed</B><BR>Construction of AST : 0.09 seconds<BR>
+Building statement hash : 0.00 seconds<BR>
+Building patterns : 0.18 seconds<BR>
+Marking similar statements : 0.23 seconds<BR>
+Finding similar sequences of statements : 0.01 seconds<BR>
+Refining candidates : 0.00 seconds<BR>
+ Total time: 0.51<BR>
+ Started at: Thu Apr 17 14:45:06 2025<BR>
+ Finished at: Thu Apr 17 14:45:07 2025
+    <P><B>Clone # 1</B><BR>Distance between two fragments = 1 <BR>Clone size = 5<TABLE NOWRAP WIDTH=100% BORDER=1><TD>Source file "PycharmProjects/odoo/addons/sale/models/account_move.py"<BR>The first line is 86</TD><TD></TD><TD>Source file "PycharmProjects/odoo/addons/sale/models/account_move.py"<BR>The first line is 78</TD></TR><TR>
+<TD>
+def <span style="color: rgb(255, 0, 0);">button_cancel</span>(self):<BR>
+&nbsp;&nbsp;&nbsp;&nbsp;res = super().<span style="color: rgb(255, 0, 0);">button_cancel</span>()<BR>
+&nbsp;&nbsp;&nbsp;&nbsp;self.line_ids.filtered('is_downpayment').sale_line_ids.filtered(lambda sol: not sol.display_type)._compute_name()<BR>
+&nbsp;&nbsp;&nbsp;&nbsp;return res</TD>
+<TD style="width: 10px;" BGCOLOR=RED> </TD><TD>
+def <span style="color: rgb(255, 0, 0);">button_draft</span>(self):<BR>
+&nbsp;&nbsp;&nbsp;&nbsp;res = super().<span style="color: rgb(255, 0, 0);">button_draft</span>()<BR>
+&nbsp;&nbsp;&nbsp;&nbsp;self.line_ids.filtered('is_downpayment').sale_line_ids.filtered(lambda sol: not sol.display_type)._compute_name()<BR>
+&nbsp;&nbsp;&nbsp;&nbsp;return res</TD>
+</TR>
+</TABLE> </P> <HR>
+    
+    
+    <HR>
+    Clone Digger is aimed to find software clones in Python and Java programs. It is provided under the GPL license and can be downloaded from the site <a href="http://clonedigger.sourceforge.net">http://clonedigger.sourceforge.net</a>
+    </BODY>
+</HTML>
