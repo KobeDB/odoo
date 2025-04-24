@@ -1,0 +1,61 @@
+pmd cpd --minimum-tokens 40 -l python -d /home/jens/PycharmProjects/odoo/addons/sale --exclude /home/jens/PycharmProjects/odoo/addons/sale/tests
+Found a 8 line (73 tokens) duplication in the following files:
+Starting at line 497 of /home/jens/PycharmProjects/odoo/addons/sale/models/sale_order.py
+Starting at line 782 of /home/jens/PycharmProjects/odoo/addons/sale/models/sale_order.py
+
+    def _compute_amounts(self):
+        AccountTax = self.env['account.tax']
+        for order in self:
+            order_lines = order.order_line.filtered(lambda x: not x.display_type)
+            base_lines = [line._prepare_base_line_for_taxes_computation() for line in order_lines]
+            base_lines += order._add_base_lines_for_early_payment_discount()
+            AccountTax._add_tax_details_in_base_lines(base_lines, order.company_id)
+            AccountTax._round_base_lines_tax_details(base_lines, order.company_id)
+
+=====================================================================
+Found a 6 line (60 tokens) duplication in the following files:
+Starting at line 46 of /home/jens/PycharmProjects/odoo/addons/sale/controllers/combo_configurator.py
+Starting at line 108 of /home/jens/PycharmProjects/odoo/addons/sale/controllers/combo_configurator.py
+
+        if company_id:
+            request.update_context(allowed_company_ids=[company_id])
+        product_template = request.env['product.template'].browse(product_tmpl_id)
+        currency = request.env['res.currency'].browse(currency_id)
+        pricelist = request.env['product.pricelist'].browse(pricelist_id)
+        date = datetime.fromisoformat(date)
+
+=====================================================================
+Found a 7 line (51 tokens) duplication in the following files:
+Starting at line 1673 of /home/jens/PycharmProjects/odoo/addons/sale/models/sale_order.py
+Starting at line 185 of /home/jens/PycharmProjects/odoo/addons/sale/wizard/sale_make_invoice_advance.py
+
+                    if tax_lines and product_lines and receivable_line:
+                        line_commands = [Command.update(receivable_line.id, {
+                            'amount_currency': receivable_line.amount_currency + delta_amount,
+                        })]
+                        delta_sign = 1 if delta_amount > 0 else -1
+                        for lines, attr, sign in (
+                            (product_lines, 'price_total', -1 if move.is_inbound() else 1),
+
+=====================================================================
+Found a 7 line (46 tokens) duplication in the following files:
+Starting at line 622 of /home/jens/PycharmProjects/odoo/addons/sale/models/sale_order_line.py
+Starting at line 662 of /home/jens/PycharmProjects/odoo/addons/sale/models/sale_order_line.py
+
+        price = self.pricelist_item_id._compute_price(
+            product=self.product_id.with_context(**self._get_product_price_context()),
+            quantity=self.product_uom_qty or 1.0,
+            uom=self.product_uom,
+            date=self._get_order_date(),
+            currency=self.currency_id,
+        )
+
+=====================================================================
+Found a 4 line (41 tokens) duplication in the following files:
+Starting at line 1689 of /home/jens/PycharmProjects/odoo/addons/sale/models/sale_order.py
+Starting at line 201 of /home/jens/PycharmProjects/odoo/addons/sale/wizard/sale_make_invoice_advance.py
+
+                                    abs(move.currency_id.round(remaining / lines_len)),
+                                )
+                                remaining -= amt
+                                line_commands.append(Command.update(line.id, {attr: line[attr] + amt * sign}))
