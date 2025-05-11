@@ -7,26 +7,32 @@ from odoo import api, fields, models
 class SaleOrderLine(models.Model):
     _inherit = 'sale.order.line'
 
+    # relevant
     is_reward_line = fields.Boolean(
         string="Is a program reward line", compute='_compute_is_reward_line')
+    # kinda relevant
     reward_id = fields.Many2one(
         comodel_name='loyalty.reward', ondelete='restrict', readonly=True)
     coupon_id = fields.Many2one(
         comodel_name='loyalty.card', ondelete='restrict', readonly=True)
     reward_identifier_code = fields.Char(
         help="Technical field used to link multiple reward lines from the same reward together.")
+    # relevant
     points_cost = fields.Float(help="How much point this reward costs on the loyalty card.")
 
+    # integrate into sale modules _compute_name
     def _compute_name(self):
         # Avoid computing the name for reward lines
         reward = self.filtered('reward_id')
         super(SaleOrderLine, self - reward)._compute_name()
 
+    # relevant
     @api.depends('reward_id')
     def _compute_is_reward_line(self):
         for line in self:
             line.is_reward_line = bool(line.reward_id)
 
+    # integrate into sale modules _compute_tax_id
     def _compute_tax_id(self):
         reward_lines = self.filtered('is_reward_line')
         super(SaleOrderLine, self - reward_lines)._compute_tax_id()
@@ -47,12 +53,15 @@ class SaleOrderLine(models.Model):
             return self.price_unit
         return super()._get_display_price()
 
+    # relevant
     def _can_be_invoiced_alone(self):
         return super()._can_be_invoiced_alone() and not self.is_reward_line
 
+    # relevant possible integration
     def _is_not_sellable_line(self):
         return self.is_reward_line or super()._is_not_sellable_line()
 
+    # not relevant, user has no control over loyalty points
     def _reset_loyalty(self, complete=False):
         """
         Reset the line(s) to a state which does not impact reward computation.
@@ -73,6 +82,7 @@ class SaleOrderLine(models.Model):
         self.write(vals)
         return self
 
+    # relevant, analyse actual meaning coupon vs loyaty card + points
     @api.model_create_multi
     def create(self, vals_list):
         res = super().create(vals_list)
@@ -83,6 +93,7 @@ class SaleOrderLine(models.Model):
                 line.order_id._update_loyalty_history(line.coupon_id, line.points_cost)
         return res
 
+    # relevant, analyse actual meaning coupon vs loyaty card + points
     def write(self, vals):
         cost_in_vals = 'points_cost' in vals
         if cost_in_vals:
@@ -95,6 +106,7 @@ class SaleOrderLine(models.Model):
                     line.coupon_id.points += (previous_cost[line] - line.points_cost)
         return res
 
+    # unrelated since functionality not supported
     def unlink(self):
         # Remove related reward lines
         reward_coupon_set = {(l.reward_id, l.coupon_id, l.reward_identifier_code) for l in self if l.reward_id}
