@@ -117,6 +117,13 @@ class SaleOrder(models.Model):
         return new_orders
 
     def action_confirm(self):
+
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning("AHAAAAAAAAAA")
+
+        self.automatically_apply_loyalty_rewards()
+
         for order in self:
             all_coupons = order.applied_coupon_ids | order.coupon_point_ids.coupon_id | order.order_line.coupon_id
             if any(order._get_real_points_for_coupon(coupon) < 0 for coupon in all_coupons):
@@ -161,20 +168,35 @@ class SaleOrder(models.Model):
             .unlink()
         self.coupon_point_ids.unlink()
         return res
+    
+    def automatically_apply_loyalty_rewards(self):
+        self.ensure_one()
+        self._update_programs_and_rewards()
+        claimable_rewards = self._get_claimable_rewards()
+        for coupon in claimable_rewards:
+            rewards = claimable_rewards[coupon]
+            if len(rewards) == 1 and not rewards.multi_product:
+                self._apply_program_reward(claimable_rewards[coupon], coupon)
+        return True
 
     def action_open_reward_wizard(self):
         self.ensure_one()
         self._update_programs_and_rewards()
         claimable_rewards = self._get_claimable_rewards()
-        if len(claimable_rewards) == 1:
-            coupon = next(iter(claimable_rewards))
+        for coupon in claimable_rewards:
             rewards = claimable_rewards[coupon]
             if len(rewards) == 1 and not rewards.multi_product:
                 self._apply_program_reward(claimable_rewards[coupon], coupon)
-                return True
-        elif not claimable_rewards:
-            return True
-        return self.env['ir.actions.actions']._for_xml_id('sale_loyalty.sale_loyalty_reward_wizard_action')
+        return True
+        # if len(claimable_rewards) == 1:
+        #     coupon = next(iter(claimable_rewards))
+        #     rewards = claimable_rewards[coupon]
+        #     if len(rewards) == 1 and not rewards.multi_product:
+        #         self._apply_program_reward(claimable_rewards[coupon], coupon)
+        #         return True
+        # elif not claimable_rewards:
+        #     return True
+        # return self.env['ir.actions.actions']._for_xml_id('sale_loyalty.sale_loyalty_reward_wizard_action')
 
     def _send_reward_coupon_mail(self):
         coupons = self.env['loyalty.card']
