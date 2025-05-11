@@ -350,6 +350,7 @@ class SaleOrderLine(models.Model):
 
     @api.depends('product_id')
     def _compute_no_variant_attribute_values(self):
+        # integrate loyalty here
         for line in self:
             if not line.product_id:
                 line.product_no_variant_attribute_value_ids = False
@@ -378,6 +379,8 @@ class SaleOrderLine(models.Model):
 
             if line.is_downpayment:
                 line.name = line._get_downpayment_description()
+
+    # add is reward line method
 
     def _get_sale_order_line_multiline_description_sale(self):
         """ Compute a default multiline description for this sales order line.
@@ -521,6 +524,8 @@ class SaleOrderLine(models.Model):
                     cached_taxes[cache_key] = result
                 # If company_id is set, always filter taxes by the company
                 line.tax_id = result
+
+        # integrate loyalty here
 
     def _get_custom_compute_tax_cache_key(self):
         """Hook method to be able to set/get cached taxes while computing them"""
@@ -993,7 +998,7 @@ class SaleOrderLine(models.Model):
         in the SO.
         """
         self.ensure_one()
-        return self.product_id.id != self.company_id.sale_discount_product_id.id
+        return self.product_id.id != self.company_id.sale_discount_product_id.id #integrate loyalty here
 
     @api.depends('invoice_lines', 'invoice_lines.price_total', 'invoice_lines.move_id.state', 'invoice_lines.move_id.move_type')
     def _compute_untaxed_amount_invoiced(self):
@@ -1200,10 +1205,12 @@ class SaleOrderLine(models.Model):
         if self.env.context.get('sale_no_log_for_new_lines'):
             return lines
 
+        # integrate handling of loyalty points \/
         for line in lines:
             if line.product_id and line.state == 'sale':
                 msg = _("Extra line with %s", line.product_id.display_name)
                 line.order_id.message_post(body=msg)
+        # integrate handling of loyalty points /\
 
         return lines
 
@@ -1261,6 +1268,8 @@ class SaleOrderLine(models.Model):
         # Don't recompute the package_id if we are setting the quantity of the items and the quantity of packages
         if 'product_uom_qty' in values and 'product_packaging_qty' in values and 'product_packaging_id' not in values:
             self.env.remove_to_compute(self._fields['product_packaging_id'], self)
+
+        # integrate handling of loyalty points
 
         return result
 
@@ -1436,7 +1445,7 @@ class SaleOrderLine(models.Model):
 
     def _is_not_sellable_line(self):
         # True if the line is a computed line (reward, delivery, ...) that user cannot add manually
-        return False
+        return False # integrate loyalty here
 
     def _get_product_catalog_lines_data(self, **kwargs):
         """ Return information about sale order lines in `self`.
@@ -1568,6 +1577,8 @@ class SaleOrderLine(models.Model):
             )
         ) or self.env['sale.order.line']
 
+    # hypothesis: can't be a down payment and it can't already be discounted
+    # add "can't be a reward line"
     def _sellable_lines_domain(self):
         discount_products_ids = self.env.companies.sale_discount_product_id.ids
         domain = [('is_downpayment', '=', False)]

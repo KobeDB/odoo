@@ -107,6 +107,7 @@ class SaleOrderLine(models.Model):
         return res
 
     # unrelated since functionality not supported
+    # further study needed
     def unlink(self):
         # Remove related reward lines
         reward_coupon_set = {(l.reward_id, l.coupon_id, l.reward_identifier_code) for l in self if l.reward_id}
@@ -134,5 +135,6 @@ class SaleOrderLine(models.Model):
         coupons_to_unlink.sudo().unlink()
         return res
 
+    # relevant
     def _sellable_lines_domain(self):
         return super()._sellable_lines_domain() + [('reward_id', '=', False)]
