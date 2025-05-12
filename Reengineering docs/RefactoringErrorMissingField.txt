@@ -1,0 +1,18 @@
+2025-05-12 07:39:43,242 17382 ERROR mydb odoo.sql_db: bad query: b'SELECT "loyalty_reward"."id" FROM "loyalty_reward" WHERE "loyalty_reward"."id" IN (4)'
+ERROR: relation "loyalty_reward" does not exist
+LINE 1: SELECT "loyalty_reward"."id" FROM "loyalty_reward" WHERE "lo...
+                                          ^
+                                          
+2025-05-12 07:39:43,242 17382 ERROR mydb odoo.sql_db: bad query: b'SELECT "loyalty_reward"."id" FROM "loyalty_reward" WHERE "loyalty_reward"."id" IN (3)'
+ERROR: relation "loyalty_reward" does not exist
+LINE 1: SELECT "loyalty_reward"."id" FROM "loyalty_reward" WHERE "lo...
+                                          ^
+ 
+2025-05-12 07:39:43,243 17382 ERROR mydb odoo.sql_db: bad query: b'SELECT "loyalty_reward"."id" FROM "loyalty_reward" WHERE "loyalty_reward"."id" IN (2)'
+ERROR: relation "loyalty_reward" does not exist
+LINE 1: SELECT "loyalty_reward"."id" FROM "loyalty_reward" WHERE "lo...
+                                          ^
+ 
+2025-05-12 07:39:43,244 17382 ERROR mydb odoo.sql_db: bad query: b'SELECT "loyalty_reward"."id" FROM "loyalty_reward" WHERE "loyalty_reward"."id" IN (1)'
+ERROR: relation "loyalty_reward" does not exist
+LINE 1: SELECT "loyalty_reward"."id" FROM "loyalty_reward" WHERE "lo...

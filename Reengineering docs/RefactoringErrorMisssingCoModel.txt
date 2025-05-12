@@ -1,0 +1,111 @@
+2025-05-12 08:14:49,726 20058 INFO ? odoo: Odoo version 18.0 
+2025-05-12 08:14:49,726 20058 INFO ? odoo: addons paths: ['/home/jens/PycharmProjects/odoo/odoo/addons', '/home/jens/.local/share/Odoo/addons/18.0', '/home/jens/PycharmProjects/odoo/addons'] 
+2025-05-12 08:14:49,726 20058 INFO ? odoo: database: default@default:default 
+2025-05-12 08:14:49,801 20058 INFO ? odoo.addons.base.models.ir_actions_report: You need Wkhtmltopdf to print a pdf version of the reports. 
+2025-05-12 08:14:49,802 20058 INFO ? odoo.addons.base.models.ir_actions_report: You need Wkhtmltoimage to generate images from html. 
+2025-05-12 08:14:49,902 20058 INFO ? odoo.service.server: HTTP service (werkzeug) running on Jens-Legion-5-Pro:8069 
+2025-05-12 08:14:49,909 20058 INFO mydb odoo.modules.loading: loading 1 modules... 
+2025-05-12 08:14:49,913 20058 INFO mydb odoo.modules.loading: 1 modules loaded in 0.00s, 0 queries (+0 extra) 
+2025-05-12 08:14:49,928 20058 INFO mydb odoo.modules.loading: loading 54 modules... 
+2025-05-12 08:14:50,292 20058 INFO mydb odoo.modules.loading: 54 modules loaded in 0.36s, 0 queries (+0 extra) 
+2025-05-12 08:14:50,353 20058 WARNING mydb odoo.fields: Field sale.order.line.reward_id with unknown comodel_name 'loyalty.reward' 
+2025-05-12 08:14:50,370 20058 INFO mydb odoo.modules.loading: Modules loaded. 
+2025-05-12 08:14:50,372 20058 INFO mydb odoo.modules.registry: Registry loaded in 0.470s 
+2025-05-12 08:14:51,794 20058 INFO mydb odoo.addons.base.models.ir_http: Generating routing map for key None 
+2025-05-12 08:14:51,842 20058 INFO mydb werkzeug: 127.0.0.1 - - [12/May/2025 08:14:51] "GET /websocket?version=18.0-3 HTTP/1.1" 101 - 6 0.003 0.048
+2025-05-12 08:14:51,958 20058 INFO mydb werkzeug: 127.0.0.1 - - [12/May/2025 08:14:51] "POST /bus/get_autovacuum_info HTTP/1.1" 200 - 4 0.001 0.002
+2025-05-12 08:14:52,173 20058 INFO ? odoo.addons.bus.models.bus: Bus.loop listen imbus on db postgres 
+2025-05-12 08:15:30,654 20058 ERROR mydb odoo.sql_db: bad query: b'SELECT "sale_order_line"."id", "sale_order_line"."analytic_distribution", "sale_order_line"."sequence", "sale_order_line"."company_id", "sale_order_line"."currency_id", "sale_order_line"."order_partner_id", "sale_order_line"."salesman_id", "sale_order_line"."state", "sale_order_line"."reward_id", "sale_order_line"."display_type", "sale_order_line"."is_downpayment", "sale_order_line"."is_expense", "sale_order_line"."product_id", "sale_order_line"."name", "sale_order_line"."product_uom_qty", "sale_order_line"."product_uom", "sale_order_line"."linked_line_id", "sale_order_line"."virtual_id", "sale_order_line"."linked_virtual_id", "sale_order_line"."combo_item_id", "sale_order_line"."price_unit", "sale_order_line"."technical_price_unit", "sale_order_line"."discount", "sale_order_line"."price_subtotal", "sale_order_line"."price_tax", "sale_order_line"."price_total", "sale_order_line"."price_reduce_taxexcl", "sale_order_line"."price_reduce_taxinc", "sale_order_line"."product_packaging_id", "sale_order_line"."product_packaging_qty", "sale_order_line"."customer_lead", "sale_order_line"."qty_delivered_method", "sale_order_line"."qty_delivered", "sale_order_line"."qty_invoiced", "sale_order_line"."qty_to_invoice", "sale_order_line"."invoice_status", "sale_order_line"."untaxed_amount_invoiced", "sale_order_line"."untaxed_amount_to_invoice", "sale_order_line"."create_uid", "sale_order_line"."create_date", "sale_order_line"."write_uid", "sale_order_line"."write_date" FROM "sale_order_line" WHERE ("sale_order_line"."id" IN (45, 46, 47))'
+ERROR: column sale_order_line.reward_id does not exist
+LINE 1: ...r_line"."salesman_id", "sale_order_line"."state", "sale_orde...
+                                                             ^
+ 
+2025-05-12 08:15:30,663 20058 ERROR mydb odoo.http: Exception during request handling. 
+Traceback (most recent call last):
+  File "/home/jens/PycharmProjects/odoo/odoo/http.py", line 2372, in __call__
+    response = request._serve_db()
+  File "/home/jens/PycharmProjects/odoo/odoo/http.py", line 1899, in _serve_db
+    return self._transactioning(
+  File "/home/jens/PycharmProjects/odoo/odoo/http.py", line 1962, in _transactioning
+    return service_model.retrying(func, env=self.env)
+  File "/home/jens/PycharmProjects/odoo/odoo/service/model.py", line 156, in retrying
+    result = func()
+  File "/home/jens/PycharmProjects/odoo/odoo/http.py", line 1929, in _serve_ir_http
+    response = self.dispatcher.dispatch(rule.endpoint, args)
+  File "/home/jens/PycharmProjects/odoo/odoo/http.py", line 2177, in dispatch
+    result = self.request.registry['ir.http']._dispatch(endpoint)
+  File "/home/jens/PycharmProjects/odoo/odoo/addons/base/models/ir_http.py", line 333, in _dispatch
+    result = endpoint(**request.params)
+  File "/home/jens/PycharmProjects/odoo/odoo/http.py", line 727, in route_wrapper
+    result = endpoint(self, *args, **params_ok)
+  File "/home/jens/PycharmProjects/odoo/addons/web/controllers/dataset.py", line 36, in call_kw
+    return call_kw(request.env[model], method, args, kwargs)
+  File "/home/jens/PycharmProjects/odoo/odoo/api.py", line 533, in call_kw
+    result = getattr(recs, name)(*args, **kwargs)
+  File "/home/jens/PycharmProjects/odoo/addons/web/models/models.py", line 75, in web_save
+    return self.with_context(bin_size=True).web_read(specification)
+  File "/home/jens/PycharmProjects/odoo/addons/web/models/models.py", line 86, in web_read
+    values_list: list[dict] = self.read(fields_to_read, load=None)
+  File "/home/jens/PycharmProjects/odoo/odoo/models.py", line 3846, in read
+    return self._read_format(fnames=fields, load=load)
+  File "/home/jens/PycharmProjects/odoo/odoo/models.py", line 4077, in _read_format
+    vals[name] = convert(record[name], record, use_display_name)
+  File "/home/jens/PycharmProjects/odoo/odoo/models.py", line 7061, in __getitem__
+    return self._fields[key].__get__(self)
+  File "/home/jens/PycharmProjects/odoo/odoo/fields.py", line 1303, in __get__
+    self.compute_value(recs)
+  File "/home/jens/PycharmProjects/odoo/odoo/fields.py", line 1485, in compute_value
+    records._compute_field_value(self)
+  File "/home/jens/PycharmProjects/odoo/addons/sale/models/sale_order.py", line 2048, in _compute_field_value
+    return super()._compute_field_value(field)
+  File "/home/jens/PycharmProjects/odoo/addons/mail/models/mail_thread.py", line 429, in _compute_field_value
+    return super()._compute_field_value(field)
+  File "/home/jens/PycharmProjects/odoo/odoo/models.py", line 5283, in _compute_field_value
+    fields.determine(field.compute, self)
+  File "/home/jens/PycharmProjects/odoo/odoo/fields.py", line 110, in determine
+    return needle(*args)
+  File "/home/jens/PycharmProjects/odoo/addons/sale/models/sale_order.py", line 558, in _get_invoiced
+    invoices = order.order_line.invoice_lines.move_id.filtered(lambda r: r.move_type in ('out_invoice', 'out_refund'))
+  File "/home/jens/PycharmProjects/odoo/odoo/fields.py", line 3061, in __get__
+    return self.mapped(records)
+  File "/home/jens/PycharmProjects/odoo/odoo/fields.py", line 1377, in mapped
+    self.__get__(first(remaining))
+  File "/home/jens/PycharmProjects/odoo/odoo/fields.py", line 3059, in __get__
+    return super().__get__(records, owner)
+  File "/home/jens/PycharmProjects/odoo/odoo/fields.py", line 1266, in __get__
+    recs._fetch_field(self)
+  File "/home/jens/PycharmProjects/odoo/odoo/models.py", line 4103, in _fetch_field
+    self.fetch(fnames)
+  File "/home/jens/PycharmProjects/odoo/odoo/models.py", line 4127, in fetch
+    self.check_access('read')
+  File "/home/jens/PycharmProjects/odoo/odoo/models.py", line 4424, in check_access
+    if not self.env.su and (result := self._check_access(operation)):
+  File "/home/jens/PycharmProjects/odoo/odoo/models.py", line 4465, in _check_access
+    if domain and (forbidden := self - self.sudo().filtered_domain(domain)):
+  File "/home/jens/PycharmProjects/odoo/addons/analytic/models/analytic_mixin.py", line 147, in filtered_domain
+    return super(AnalyticMixin, self.with_context(distribution_ids=True)).filtered_domain(domain)
+  File "/home/jens/PycharmProjects/odoo/odoo/models.py", line 6657, in filtered_domain
+    data = record.mapped(key)
+  File "/home/jens/PycharmProjects/odoo/addons/analytic/models/analytic_mixin.py", line 142, in mapped
+    return super().mapped(func)
+  File "/home/jens/PycharmProjects/odoo/odoo/models.py", line 6500, in mapped
+    recs = recs._fields[name].mapped(recs)
+  File "/home/jens/PycharmProjects/odoo/odoo/fields.py", line 1377, in mapped
+    self.__get__(first(remaining))
+  File "/home/jens/PycharmProjects/odoo/odoo/fields.py", line 3059, in __get__
+    return super().__get__(records, owner)
+  File "/home/jens/PycharmProjects/odoo/odoo/fields.py", line 1266, in __get__
+    recs._fetch_field(self)
+  File "/home/jens/PycharmProjects/odoo/odoo/models.py", line 4103, in _fetch_field
+    self.fetch(fnames)
+  File "/home/jens/PycharmProjects/odoo/odoo/models.py", line 4140, in fetch
+    fetched = self._fetch_query(query, fields_to_fetch)
+  File "/home/jens/PycharmProjects/odoo/odoo/models.py", line 4227, in _fetch_query
+    rows = self.env.execute_query(query.select(*sql_terms))
+  File "/home/jens/PycharmProjects/odoo/odoo/api.py", line 978, in execute_query
+    self.cr.execute(query)
+  File "/home/jens/PycharmProjects/odoo/odoo/sql_db.py", line 354, in execute
+    res = self._obj.execute(query, params)
+psycopg2.errors.UndefinedColumn: column sale_order_line.reward_id does not exist
+LINE 1: ...r_line"."salesman_id", "sale_order_line"."state", "sale_orde...
+
