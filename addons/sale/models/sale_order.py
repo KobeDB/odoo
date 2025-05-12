@@ -60,7 +60,7 @@ class SaleOrder(models.Model):
     ]
 
     @property
-    def _rec_names_search(self):
+    def _rec_names_search(self):    
         if self._context.get('sale_show_partner_name'):
             return ['name', 'partner_id.name']
         return ['name']
