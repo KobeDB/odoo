@@ -120,7 +120,7 @@ class SaleOrderLoyalty(models.Model):
 
         import logging
         logger = logging.getLogger(__name__)
-        logger.warning("AHAAAAAAAAAA")
+        logger.warning("ENTERING: sale/SaleOrderLoyalty.action_confirm")
 
         self.automatically_apply_loyalty_rewards()
 

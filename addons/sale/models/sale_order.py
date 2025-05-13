@@ -1146,6 +1146,9 @@ class SaleOrder(models.Model):
         :rtype: bool
         :raise: UserError if trying to confirm cancelled SO's
         """
+
+        _logger.warning("ENTERING: sale/SaleOrder.action_confirm")
+
         for order in self:
             error_msg = order._confirmation_error_message()
             if error_msg:
