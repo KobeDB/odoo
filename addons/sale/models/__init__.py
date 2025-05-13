@@ -19,6 +19,8 @@ from . import sale_order
 from . import sale_order_line
 from . import utm_campaign
 
+from . import sale_order_line_loyalty
+from . import sale_order_loyalty
 from . import loyalty_card
 from . import loyalty_history
 from . import loyalty_program

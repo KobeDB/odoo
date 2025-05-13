@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="sale_order_view_form_inherit_sale_loyalty" model="ir.ui.view">
+        <field name="name">sale.order.view.form.inherit.sale.loyalty</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="priority">10</field>
+        <field name="arch" type="xml">
+            <xpath expr="//list//field[@name='product_uom_qty']" position="before">
+                <field name="is_reward_line" column_invisible="True"/>
+            </xpath>
+            <xpath expr="//list//field[@name='product_uom_qty']" position="attributes">
+                <attribute name="readonly" add="is_reward_line" separator=" or "/>
+            </xpath>
+            <xpath expr="//list//field[@name='price_unit']" position="attributes">
+                <attribute name="readonly" add="is_reward_line" separator=" or "/>
+            </xpath>
+            <xpath expr="//list//field[@name='tax_id']" position="attributes">
+                <attribute name="readonly" add="is_reward_line" separator=" or "/>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

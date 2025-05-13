@@ -65,6 +65,7 @@ This module contains all the common features of Sales Management and eCommerce.
         'views/loyalty_card_views.xml',
         'views/loyalty_program_views.xml',
         'views/sale_loyalty_menus.xml',
+        'views/sale_order_views_loyalty.xml'
     ],
     'demo': [
         'data/product_demo.xml',
