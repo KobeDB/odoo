@@ -13,6 +13,7 @@ This module contains all the common features of Sales Management and eCommerce.
         'sales_team',
         'account_payment',  # -> account, payment, portal
         'utm',
+        'loyalty', # ADDED
     ],
     'data': [
         'security/ir.model.access.csv',
@@ -58,6 +59,8 @@ This module contains all the common features of Sales Management and eCommerce.
         'views/utm_campaign_views.xml',
 
         'views/sale_menus.xml',  # Last because referencing actions defined in previous files
+
+        'data/sale_loyalty_data.xml',
     ],
     'demo': [
         'data/product_demo.xml',
