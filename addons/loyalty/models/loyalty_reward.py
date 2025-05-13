@@ -44,13 +44,14 @@ class LoyaltyReward(models.Model):
         for reward in self:
             reward.display_name = f'{reward.program_id.name} - {reward.description}'
 
-    active = fields.Boolean(default=True)
-    program_id = fields.Many2one('loyalty.program', required=True, ondelete='cascade')
-    program_type = fields.Selection(related="program_id.program_type")
+    active = fields.Boolean(default=True) # unnecessary will always be active
+    program_id = fields.Many2one('loyalty.program', required=True, ondelete='cascade') # no different programs needed + removes dependency on loyalty program model
+    program_type = fields.Selection(related="program_id.program_type") # only one type
     # Stored for security rules
-    company_id = fields.Many2one(related='program_id.company_id', store=True)
-    currency_id = fields.Many2one(related='program_id.currency_id')
+    company_id = fields.Many2one(related='program_id.company_id', store=True) # TBD
+    currency_id = fields.Many2one(related='program_id.currency_id') # TBD
 
+    # unimportant
     description = fields.Char(
         translate=True,
         compute='_compute_description',
@@ -60,40 +61,45 @@ class LoyaltyReward(models.Model):
         required=True,
     )
 
+    # irrelevant
     reward_type = fields.Selection([
         ('product', 'Free Product'),
         ('discount', 'Discount')],
         default='discount', required=True,
     )
+
+    # keep debug functionality
     user_has_debug = fields.Boolean(compute='_compute_user_has_debug')
 
     # Discount rewards
-    discount = fields.Float('Discount', default=10)
-    discount_mode = fields.Selection(selection=_get_discount_mode_select, required=True, default='percent')
+    discount = fields.Float('Discount', default=10) # needed
+    discount_mode = fields.Selection(selection=_get_discount_mode_select, required=True, default='percent') # decide one percent or currency discount
+
+    # decide one, preference whole order
     discount_applicability = fields.Selection([
         ('order', 'Order'),
         ('cheapest', 'Cheapest Product'),
         ('specific', 'Specific Products')], default='order',
     )
-    discount_product_domain = fields.Char(default="[]")
+    discount_product_domain = fields.Char(default="[]") # likely irrelevant due to all products being included in discount
     discount_product_ids = fields.Many2many('product.product', string="Discounted Products")
-    discount_product_category_id = fields.Many2one('product.category', string="Discounted Prod. Categories")
-    discount_product_tag_id = fields.Many2one('product.tag', string="Discounted Prod. Tag")
-    all_discount_product_ids = fields.Many2many('product.product', compute='_compute_all_discount_product_ids')
-    reward_product_domain = fields.Char(compute='_compute_reward_product_domain', store=False)
+    discount_product_category_id = fields.Many2one('product.category', string="Discounted Prod. Categories") # likely irrelevant due to all products being included in discount
+    discount_product_tag_id = fields.Many2one('product.tag', string="Discounted Prod. Tag") # likely irrelevant due to all products being included in discount
+    all_discount_product_ids = fields.Many2many('product.product', compute='_compute_all_discount_product_ids') # likely irrelevant due to all products being included in discount
+    reward_product_domain = fields.Char(compute='_compute_reward_product_domain', store=False) # not part of spec
     discount_max_amount = fields.Monetary('Max Discount', 'currency_id',
-        help="This is the max amount this reward may discount, leave to 0 for no limit.")
+        help="This is the max amount this reward may discount, leave to 0 for no limit.") # very much necessary
     discount_line_product_id = fields.Many2one('product.product', copy=False, ondelete='restrict',
-        help="Product used in the sales order to apply the discount. Each reward has its own product for reporting purpose")
-    is_global_discount = fields.Boolean(compute='_compute_is_global_discount')
+        help="Product used in the sales order to apply the discount. Each reward has its own product for reporting purpose") # only one reward line, so prob irrelevant
+    is_global_discount = fields.Boolean(compute='_compute_is_global_discount') # will always be true
     tax_ids = fields.Many2many(
         string="Taxes",
         help="Taxes to add on the discount line.",
         comodel_name='account.tax',
         domain="[('type_tax_use', '=', 'sale'), ('company_id', '=', company_id)]",
-    )
+    ) # relevant
 
-    # Product rewards
+    # Product rewards whole section irrelevant since not supported
     reward_product_id = fields.Many2one(
         'product.product', string='Product', domain=[('type', '!=', 'combo')]
     )
