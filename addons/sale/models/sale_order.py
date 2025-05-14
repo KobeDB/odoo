@@ -45,6 +45,19 @@ SALE_ORDER_STATE = [
     ('cancel', "Cancelled"),
 ]
 
+class SaleOrderPricing():
+    def compute_prices(self, order, accountTax):
+        order_lines = order.order_line.filtered(lambda x: not x.display_type)
+        base_lines = [line._prepare_base_line_for_taxes_computation() for line in order_lines]
+        base_lines += order._add_base_lines_for_early_payment_discount()
+        accountTax._add_tax_details_in_base_lines(base_lines, order.company_id)
+        accountTax._round_base_lines_tax_details(base_lines, order.company_id)
+        tax_totals = accountTax._get_tax_totals_summary(
+            base_lines=base_lines,
+            currency=order.currency_id or order.company_id.currency_id,
+            company=order.company_id,
+        )
+        return tax_totals
 
 class SaleOrder(models.Model):
     _name = 'sale.order'
@@ -58,6 +71,8 @@ class SaleOrder(models.Model):
          "CHECK((state = 'sale' AND date_order IS NOT NULL) OR state != 'sale')",
          "A confirmed sales order requires a confirmation date."),
     ]
+
+    saleOrderPricing = SaleOrderPricing()
 
     @property
     def _rec_names_search(self):
@@ -497,16 +512,7 @@ class SaleOrder(models.Model):
     def _compute_amounts(self):
         AccountTax = self.env['account.tax']
         for order in self:
-            order_lines = order.order_line.filtered(lambda x: not x.display_type)
-            base_lines = [line._prepare_base_line_for_taxes_computation() for line in order_lines]
-            base_lines += order._add_base_lines_for_early_payment_discount()
-            AccountTax._add_tax_details_in_base_lines(base_lines, order.company_id)
-            AccountTax._round_base_lines_tax_details(base_lines, order.company_id)
-            tax_totals = AccountTax._get_tax_totals_summary(
-                base_lines=base_lines,
-                currency=order.currency_id or order.company_id.currency_id,
-                company=order.company_id,
-            )
+            tax_totals = self.saleOrderPricing.compute_prices(order, AccountTax)
             order.amount_untaxed = tax_totals['base_amount_currency']
             order.amount_tax = tax_totals['tax_amount_currency']
             order.amount_total = tax_totals['total_amount_currency']
