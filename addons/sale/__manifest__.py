@@ -13,7 +13,6 @@ This module contains all the common features of Sales Management and eCommerce.
         'sales_team',
         'account_payment',  # -> account, payment, portal
         'utm',
-        'loyalty',
     ],
     'data': [
         'security/ir.model.access.csv',

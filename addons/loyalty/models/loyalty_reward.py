@@ -125,6 +125,7 @@ class LoyaltyReward(models.Model):
             'The discount must be strictly positive.'),
     ]
 
+
     @api.depends('reward_product_id.product_tmpl_id.uom_id', 'reward_product_tag_id')
     def _compute_reward_product_uom_id(self):
         for reward in self:

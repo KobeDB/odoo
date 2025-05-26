@@ -45,7 +45,6 @@ SALE_ORDER_STATE = [
     ('cancel', "Cancelled"),
 ]
 
-
 class SaleOrder(models.Model):
     _name = 'sale.order'
     _inherit = ['portal.mixin', 'product.catalog.mixin', 'mail.thread', 'mail.activity.mixin', 'utm.mixin']
@@ -239,7 +238,9 @@ class SaleOrder(models.Model):
     amount_to_invoice = fields.Monetary(string="Un-invoiced Balance", compute='_compute_amount_to_invoice')
     amount_invoiced = fields.Monetary(string="Already invoiced", compute='_compute_amount_invoiced')
 
-    # TODO add extra field for loyalty points
+    loyalty_discount = fields.Monetary(string="Loyalty Discount", help="Computed on untaxed total price", default=0, compute='_compute_loyalty_discount', store=True)
+    loyalty_points = fields.Float(string="Loyalty Points", help="Points awarded for this order computed on untaxed total price", default=0, store=True)
+    loyalty_points_awarded = fields.Boolean(string="Loyalty Points Awarded", default=False)
 
     invoice_count = fields.Integer(string="Invoice Count", compute='_get_invoiced')
     invoice_ids = fields.Many2many(
@@ -492,7 +493,6 @@ class SaleOrder(models.Model):
                 )
             order.team_id = cached_teams[key]
 
-    # ToDo adapt to calculate loyalty points and possible discount
     @api.depends('order_line.price_subtotal', 'currency_id', 'company_id', 'payment_term_id')
     def _compute_amounts(self):
         AccountTax = self.env['account.tax']
@@ -510,6 +510,57 @@ class SaleOrder(models.Model):
             order.amount_untaxed = tax_totals['base_amount_currency']
             order.amount_tax = tax_totals['tax_amount_currency']
             order.amount_total = tax_totals['total_amount_currency']
+
+    @api.depends('amount_untaxed', 'partner_id')
+    def _compute_loyalty_discount(self):
+        for order in self:
+            order.loyalty_discount = 0.0
+            card = self.env['sale.loyalty.card'].search([
+                ('partner_id', '=', order.partner_id.id),
+                ('company_id', '=', order.company_id.id)
+            ], limit=1)
+            if not card:
+                _logger.warning(f"Missing loyalty card for customer: {order.partner_id.name} for company: {order.company_id.name}")
+                return
+            if card.points < card.threshold:
+                _logger.info(f"Customer: {order.partner_id.name} has insufficient points ({card.points}) on their loyalty card for company {order.company_id.name}")
+                return self._calculate_loyalty_points()
+
+            if card.discount_type == "p":
+                order.loyalty_discount = order.amount_untaxed * card.percentage_discount
+            elif card.discount_type == "c":
+                order.loyalty_discount = card.currency_discount
+            else:
+                _logger.error(f"An unsupported loyalty discount was used.")
+
+            if card.max_discount and card.max_discount_amount < order.loyalty_discount:
+                order.loyalty_discount = card.max_discount_amount
+
+            self.env['sale.order.line'].create({
+                'order_id': order.id,
+                'product_id': self.env.ref('product.product_product_delivery').id,
+                'name': 'Loyalty Discount',
+                'product_uom_qty': 1,
+                'price_unit': -order.loyalty_discount,
+                'tax_id': [(6, 0, [])],
+                'is_reward_line': True,
+            })
+
+            # ensure discount never larger than actual price.
+
+            self._calculate_loyalty_points()
+
+    @api.depends('amount_untaxed', 'partner_id')
+    def _calculate_loyalty_points(self):
+        for order in self:
+            card = self.env['sale.loyalty.card'].search([
+                ('partner_id', '=', order.partner_id.id),
+                ('company_id', '=', order.company_id.id)
+            ], limit=1)
+
+            price = order.amount_untaxed - order.loyalty_discount
+            order.loyalty_points = price * card.conversion_rate
+            _logger.info(f"Customer: {order.partner_id.name} stands to gain ({order.loyalty_points}) on their loyalty card for company {order.company_id.name}")
 
     def _add_base_lines_for_early_payment_discount(self):
         """

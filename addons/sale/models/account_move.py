@@ -3,7 +3,9 @@
 
 from odoo import api, fields, models, _
 from odoo.tools import groupby
+import logging
 
+_logger = logging.getLogger(__name__)
 
 class AccountMove(models.Model):
     _name = 'account.move'
@@ -198,3 +200,35 @@ class AccountMove(models.Model):
                 ) for sale_order in sale_orders
             )
             move.partner_credit += max(amount_total_currency - amount_to_invoice_currency, 0.0)
+
+    def write(self, vals):
+        res = super().write(vals)
+        if 'payment_state' in vals and vals['payment_state'] == 'paid':
+            self._apply_loyalty_points()
+        return res
+
+    def _apply_loyalty_points(self):
+        for move in self:
+            if move.move_type != 'out_invoice' or move.payment_state != 'paid':
+                continue
+
+            order = self.env['sale.order'].search([
+                ('invoice_ids', 'in', move.id)
+            ], limit=1)
+
+            # points already awarded or no sale order found
+            if not order or order.loyalty_points_awarded:
+                continue
+
+            card = self.env['sale.loyalty.card'].search([
+                ('partner_id', '=', order.partner_id.id),
+                ('company_id', '=', order.company_id.id)
+            ], limit=1)
+
+            if not card:
+                continue
+
+            # Use loyalty_points field from order
+            card.points += order.loyalty_points
+            order.loyalty_points_awarded = True
+            _logger.info(f"Customer: {order.partner_id.name} was awarded ({order.loyalty_points}) on their loyalty card for company {order.company_id.name}")

@@ -31,11 +31,7 @@ class SaleOrderLine(models.Model):
     ]
 
     # from SLM
-    reward_id = fields.Many2one(
-        comodel_name='loyalty.reward', ondelete='restrict', readonly=True)
-
-    is_reward_line = fields.Boolean(
-        string="Is a program reward line", compute='_compute_is_reward_line')
+    is_reward_line = fields.Boolean(string="Is a program reward line", default=False)
 
     # Fields are ordered according by tech & business logics
     # and computed fields are defined after their dependencies.
@@ -372,9 +368,7 @@ class SaleOrderLine(models.Model):
 
     @api.depends('product_id', 'linked_line_id', 'linked_line_ids')
     def _compute_name(self):
-        # integrated is reward line method
-        reward = self.filtered('reward_id')
-        for line in self - reward:
+        for line in self - self.filtered("is_reward_line"):
             if not line.product_id and not line.is_downpayment:
                 continue
 
@@ -388,11 +382,6 @@ class SaleOrderLine(models.Model):
 
             if line.is_downpayment:
                 line.name = line._get_downpayment_description()
-
-    @api.depends('reward_id')
-    def _compute_is_reward_line(self):
-        for line in self:
-            line.is_reward_line = bool(line.reward_id)
 
     def _get_sale_order_line_multiline_description_sale(self):
         """ Compute a default multiline description for this sales order line.
@@ -1226,14 +1215,17 @@ class SaleOrderLine(models.Model):
             return lines
 
         # integrate handling of loyalty points \/
-        for line in lines:
-            if line.product_id and line.state == 'sale':
-                msg = _("Extra line with %s", line.product_id.display_name)
-                line.order_id.message_post(body=msg)
-            # integrated SLM
-            if line.coupon_id and line.points_cost and line.state == 'sale':
-                line.coupon_id.points -= line.points_cost
-                line.order_id._update_loyalty_history(line.coupon_id, line.points_cost)
+
+        # irrelevant to current implementation
+
+        # for line in lines:
+        #     if line.product_id and line.state == 'sale':
+        #         msg = _("Extra line with %s", line.product_id.display_name)
+        #         line.order_id.message_post(body=msg)
+        #     # integrated SLM
+        #     if line.coupon_id and line.points_cost and line.state == 'sale':
+        #         line.coupon_id.points -= line.points_cost
+        #         line.order_id._update_loyalty_history(line.coupon_id, line.points_cost)
         # integrate handling of loyalty points /\
 
         return lines

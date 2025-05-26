@@ -100,6 +100,13 @@ class ResPartner(models.Model):
             )
             partner.credit_to_invoice += credit_company_currency
 
+    @api.model
+    def create(self, vals):
+        partner = super().create(vals)
+        if partner.customer_rank > 0:
+            self.env['res.company'].search([]).sudo()._create_loyalty_cards_for_customer(partner)
+        return partner
+
     def unlink(self):
         # Unlink draft/cancelled SO so that the partner can be removed from database
         self.env['sale.order'].sudo().search([

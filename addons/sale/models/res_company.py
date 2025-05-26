@@ -54,3 +54,14 @@ class ResCompany(models.Model):
         for company in self:
             if company.portal_confirmation_pay and not (0 < company.prepayment_percent <= 1.0):
                 raise ValidationError(_("Prepayment percentage must be a valid percentage."))
+
+    def _create_loyalty_cards_for_customer(self, partner):
+        LoyaltyCard = self.env['sale.loyalty.card']
+        for company in self:
+            if not LoyaltyCard.search_count([('partner_id', '=', partner.id), ('company_id', '=', company.id)]):
+                LoyaltyCard.create({
+                    'name': f'Loyalty Card for {partner.name} ({company.name})',
+                    'partner_id': partner.id,
+                    'company_id': company.id,
+                    'points': 0
+                })
