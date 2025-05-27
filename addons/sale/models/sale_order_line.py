@@ -11,7 +11,9 @@ from odoo.fields import Command
 from odoo.osv import expression
 from odoo.tools import float_compare, float_is_zero, format_date, groupby
 from odoo.tools.translate import _
+import logging
 
+_logger = logging.getLogger(__name__)
 
 class SaleOrderLine(models.Model):
     _name = 'sale.order.line'
@@ -1237,11 +1239,6 @@ class SaleOrderLine(models.Model):
                 vals['technical_price_unit'] = vals['price_unit']
 
     def write(self, values):
-        # integrated SLM
-        cost_in_vals = 'points_cost' in values
-        if cost_in_vals:
-            previous_cost = {l: l.points_cost for l in self}
-
         if 'display_type' in values and self.filtered(lambda line: line.display_type != values.get('display_type')):
             raise UserError(_("You cannot change the type of a sale order line. Instead you should delete the current line and create a new line of the proper type."))
 
@@ -1290,12 +1287,6 @@ class SaleOrderLine(models.Model):
         if 'product_uom_qty' in values and 'product_packaging_qty' in values and 'product_packaging_id' not in values:
             self.env.remove_to_compute(self._fields['product_packaging_id'], self)
 
-        # integrated handling of loyalty points
-        if cost_in_vals:
-            # Update our coupon points if the order is in a confirmed state
-            for line in self:
-                if previous_cost[line] != line.points_cost and line.state == 'sale':
-                    line.coupon_id.points += (previous_cost[line] - line.points_cost)
         return result
 
     def _get_protected_fields(self):

@@ -24,6 +24,8 @@ class AccountMove(models.Model):
     source_id = fields.Many2one(ondelete='set null')
     sale_order_count = fields.Integer(compute="_compute_origin_so_count", string='Sale Order Count')
 
+    loyalty_points_applied = fields.Boolean(compute='_compute_loyalty_points', store=True, default=False)
+
     def unlink(self):
         downpayment_lines = self.mapped('line_ids.sale_line_ids').filtered(lambda line: line.is_downpayment and line.invoice_lines <= self.mapped('line_ids'))
         res = super(AccountMove, self).unlink()
@@ -201,19 +203,15 @@ class AccountMove(models.Model):
             )
             move.partner_credit += max(amount_total_currency - amount_to_invoice_currency, 0.0)
 
-    def write(self, vals):
-        res = super().write(vals)
-        if 'payment_state' in vals and vals['payment_state'] == 'paid':
-            self._apply_loyalty_points()
-        return res
 
-    def _apply_loyalty_points(self):
+    @api.depends('payment_state')
+    def _compute_loyalty_points(self):
         for move in self:
             if move.move_type != 'out_invoice' or move.payment_state != 'paid':
                 continue
 
             order = self.env['sale.order'].search([
-                ('invoice_ids', 'in', move.id)
+                ('invoice_ids', '=', move.id)
             ], limit=1)
 
             # points already awarded or no sale order found
@@ -230,5 +228,15 @@ class AccountMove(models.Model):
 
             # Use loyalty_points field from order
             card.points += order.loyalty_points
+            move.loyalty_points_applied = True
             order.loyalty_points_awarded = True
-            _logger.info(f"Customer: {order.partner_id.name} was awarded ({order.loyalty_points}) on their loyalty card for company {order.company_id.name}")
+            _logger.info(f"-------------------------------------------------------------------------------------------------------------------------------\n"
+                         f"Customer: {order.partner_id.name} was awarded ({order.loyalty_points}) on their loyalty card for company {order.company_id.name}\n"
+                         f"and now has a total of {card.points} points available.\n"
+                         f"-------------------------------------------------------------------------------------------------------------------------------")
+            if order.loyalty_points_used > 0:
+                card.points -= order.loyalty_points_used
+                _logger.info(f"===============================================================================================================================\n"
+                             f"Customer: {order.partner_id.name} used {order.loyalty_points_used} from their loyalty card for company {order.company_id.name}\n"
+                             f"on their purchase and now has a total of {card.points} points remaining.\n"
+                             f"===============================================================================================================================")
