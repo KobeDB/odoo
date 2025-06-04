@@ -49,3 +49,6 @@ package.json
 /man/
 /share/
 /src/
+coverage.xml
+sonar-project.properties
+UML-Extract-Class

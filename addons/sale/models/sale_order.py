@@ -28,6 +28,7 @@ from odoo.tools import (
 from odoo.tools.mail import html_keep_url
 
 from odoo.addons.payment import utils as payment_utils
+from .sale_order_pricing import SaleOrderPricing
 
 _logger = logging.getLogger(__name__)
 
@@ -496,39 +497,12 @@ class SaleOrder(models.Model):
 
     @api.depends('order_line.price_subtotal', 'currency_id', 'company_id', 'payment_term_id', 'state')
     def _compute_amounts(self):
-        AccountTax = self.env['account.tax']
         for order in self:
-            order_lines = order.order_line.filtered(lambda x: not x.display_type)
-            base_lines = [line._prepare_base_line_for_taxes_computation() for line in order_lines]
-            base_lines += order._add_base_lines_for_early_payment_discount()
-            AccountTax._add_tax_details_in_base_lines(base_lines, order.company_id)
-            AccountTax._round_base_lines_tax_details(base_lines, order.company_id)
-            tax_totals = AccountTax._get_tax_totals_summary(
-                base_lines=base_lines,
-                currency=order.currency_id or order.company_id.currency_id,
-                company=order.company_id,
-            )
-            order.amount_untaxed = tax_totals['base_amount_currency']
-            order.amount_tax = tax_totals['tax_amount_currency']
-            order.amount_total = tax_totals['total_amount_currency']
-            order._loyalty_discount()
-
-            if order.loyalty_discount > 0:
-                percentage = order.loyalty_discount/tax_totals['base_amount_currency']
-                discounted_untaxed = tax_totals['base_amount_currency'] * (1 - percentage)
-                discount_tax = tax_totals['tax_amount_currency'] * (1 - percentage)
-
-                order.amount_untaxed = discounted_untaxed
-                order.amount_tax = discount_tax
-                order.amount_total = discounted_untaxed + discount_tax
-
-            _logger.info(f"\n================================================================\n"
-                         f"Loyalty discount: {order.loyalty_discount} applied\n"
-                         f"Untaxed: {tax_totals['base_amount_currency']} -> {order.amount_untaxed}\n"
-                         f"Tax: {tax_totals['tax_amount_currency']} -> {order.amount_tax}\n"
-                         f"Total: {tax_totals['total_amount_currency']} -> {order.amount_total}\n"
-                         f"================================================================\n"
-                         )
+            pricing = SaleOrderPricing(order)
+            totals = pricing.compute_totals()
+            order.amount_untaxed = totals['amount_untaxed']
+            order.amount_tax = totals['amount_tax']
+            order.amount_total = totals['amount_total']
 
     def _loyalty_discount(self):
         for order in self:
@@ -582,35 +556,8 @@ class SaleOrder(models.Model):
         Creates the necessary line for this behavior to be displayed.
         :returns: array containing the necessary lines or empty array if the payment term isn't epd mixed
         """
-        self.ensure_one()
-        epd_lines = []
-        if (
-            self.payment_term_id.early_discount
-            and self.payment_term_id.early_pay_discount_computation == 'mixed'
-            and self.payment_term_id.discount_percentage
-        ):
-            percentage = self.payment_term_id.discount_percentage
-            currency = self.currency_id or self.company_id.currency_id
-            for line in self.order_line.filtered(lambda x: not x.display_type):
-                line_amount_after_discount = (line.price_subtotal / 100) * percentage
-                epd_lines.append(self.env['account.tax']._prepare_base_line_for_taxes_computation(
-                    record=self,
-                    price_unit=-line_amount_after_discount,
-                    quantity=1.0,
-                    currency_id=currency,
-                    sign=1,
-                    special_type='early_payment',
-                    tax_ids=line.tax_id,
-                ))
-                epd_lines.append(self.env['account.tax']._prepare_base_line_for_taxes_computation(
-                    record=self,
-                    price_unit=line_amount_after_discount,
-                    quantity=1.0,
-                    currency_id=currency,
-                    sign=1,
-                    special_type='early_payment',
-                ))
-        return epd_lines
+        pricing = SaleOrderPricing(self)
+        return pricing.compute_early_payment_discount()
 
     @api.depends('order_line.invoice_lines')
     def _get_invoiced(self):
@@ -844,18 +791,9 @@ class SaleOrder(models.Model):
     @api.depends_context('lang')
     @api.depends('order_line.price_subtotal', 'currency_id', 'company_id', 'payment_term_id')
     def _compute_tax_totals(self):
-        AccountTax = self.env['account.tax']
         for order in self:
-            order_lines = order.order_line.filtered(lambda x: not x.display_type)
-            base_lines = [line._prepare_base_line_for_taxes_computation() for line in order_lines]
-            base_lines += order._add_base_lines_for_early_payment_discount()
-            AccountTax._add_tax_details_in_base_lines(base_lines, order.company_id)
-            AccountTax._round_base_lines_tax_details(base_lines, order.company_id)
-            order.tax_totals = AccountTax._get_tax_totals_summary(
-                base_lines=base_lines,
-                currency=order.currency_id or order.company_id.currency_id,
-                company=order.company_id,
-            )
+            pricing = SaleOrderPricing(order)
+            order.tax_totals = pricing.compute_tax_totals()
 
     @api.depends('state')
     def _compute_type_name(self):
