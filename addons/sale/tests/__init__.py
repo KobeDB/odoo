@@ -11,6 +11,7 @@ from . import test_product_attribute_value
 from . import test_product_configurator_data
 from . import test_sale_combo_configurator
 from . import test_sale_flow
+from . import test_sale_loyalty
 from . import test_sale_order
 from . import test_sale_order_cancel
 from . import test_sale_order_discount

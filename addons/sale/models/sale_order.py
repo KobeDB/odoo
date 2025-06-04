@@ -30,6 +30,7 @@ from odoo.tools.mail import html_keep_url
 from odoo.addons.payment import utils as payment_utils
 
 _logger = logging.getLogger(__name__)
+LOYALTY_LOGGING = False
 
 INVOICE_STATUS = [
     ('upselling', 'Upselling Opportunity'),
@@ -239,7 +240,7 @@ class SaleOrder(models.Model):
     amount_invoiced = fields.Monetary(string="Already invoiced", compute='_compute_amount_invoiced')
 
     loyalty_discount = fields.Monetary(string="Loyalty Discount", help="Computed on untaxed total price", default=0, store=True)
-    loyalty_points = fields.Float(string="Loyalty Points", help="Points awarded for this order computed on untaxed total price", default=0, store=True)
+    loyalty_points = fields.Float(string="Loyalty Points", help="Points awarded for this order computed on untaxed total price", default=0.0, store=True)
     loyalty_points_used = fields.Float(string="Loyalty Points Used", help="Number of loyalty points traded in for a discount.", default=0.0, store=True)
     loyalty_points_awarded = fields.Boolean(string="Loyalty Points Awarded", default=False, store=True)
 
@@ -494,7 +495,7 @@ class SaleOrder(models.Model):
                 )
             order.team_id = cached_teams[key]
 
-    @api.depends('order_line.price_subtotal', 'currency_id', 'company_id', 'payment_term_id', 'state')
+    @api.depends('currency_id', 'company_id', 'payment_term_id', 'state')
     def _compute_amounts(self):
         AccountTax = self.env['account.tax']
         for order in self:
@@ -522,6 +523,8 @@ class SaleOrder(models.Model):
                 order.amount_tax = discount_tax
                 order.amount_total = discounted_untaxed + discount_tax
 
+            if not LOYALTY_LOGGING:
+                return
             _logger.info(f"\n================================================================\n"
                          f"Loyalty discount: {order.loyalty_discount} applied\n"
                          f"Untaxed: {tax_totals['base_amount_currency']} -> {order.amount_untaxed}\n"
@@ -539,15 +542,18 @@ class SaleOrder(models.Model):
             ], limit=1)
             if not card:
                 _logger.warning(f"Missing loyalty card for customer: {order.partner_id.name} for company: {order.company_id.name}")
+                if not LOYALTY_LOGGING:
+                    return
                 _logger.info(f"Created loyalty card for customer: {order.partner_id.name} for company: {order.company_id.name}")
                 order.company_id._create_loyalty_cards_for_customer(order.partner_id)
                 self._loyalty_points()
                 # wont have to apply discount yet since card just created
                 return
 
-            if card.points < card.threshold:
-                _logger.info(f"Customer: {order.partner_id.name} has insufficient points ({card.points}) on their loyalty card for company {order.company_id.name}")
+            if not card.discount():
                 self._loyalty_points()
+                if LOYALTY_LOGGING:
+                    _logger.info(f"Customer: {order.partner_id.name} has insufficient points ({card.points}) on their loyalty card for company {order.company_id.name}")
                 return
 
             if card.discount_type == "p":
@@ -573,7 +579,8 @@ class SaleOrder(models.Model):
 
             price = order.amount_untaxed - order.loyalty_discount
             order.loyalty_points = price * card.conversion_rate
-            _logger.info(f"Customer: {order.partner_id.name} stands to gain {order.loyalty_points} points on their loyalty card for company {order.company_id.name}")
+            if LOYALTY_LOGGING:
+                _logger.info(f"Customer: {order.partner_id.name} stands to gain {order.loyalty_points} points on their loyalty card for company {order.company_id.name}")
 
     def _add_base_lines_for_early_payment_discount(self):
         """

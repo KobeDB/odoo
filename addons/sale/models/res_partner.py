@@ -100,7 +100,7 @@ class ResPartner(models.Model):
             )
             partner.credit_to_invoice += credit_company_currency
 
-    @api.model
+    @api.model_create_multi
     def create(self, vals):
         partner = super().create(vals)
         if partner.customer_rank > 0:
