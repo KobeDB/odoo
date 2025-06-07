@@ -7,6 +7,8 @@ from collections import defaultdict
 from datetime import timedelta
 from itertools import groupby
 
+from .constants import *
+
 from odoo import SUPERUSER_ID, _, api, fields, models
 from odoo.exceptions import (
     AccessError,
@@ -33,17 +35,17 @@ _logger = logging.getLogger(__name__)
 LOYALTY_LOGGING = False
 
 INVOICE_STATUS = [
-    ('upselling', 'Upselling Opportunity'),
-    ('invoiced', 'Fully Invoiced'),
-    ('to invoice', 'To Invoice'),
-    ('no', 'Nothing to Invoice')
+    (str(InvoiceStatus.UPSELLING), 'Upselling Opportunity'),
+    (str(InvoiceStatus.INVOICED), 'Fully Invoiced'),
+    (str(InvoiceStatus.TO_INVOICE), 'To Invoice'),
+    (str(InvoiceStatus.NO), 'Nothing to Invoice')
 ]
 
 SALE_ORDER_STATE = [
-    ('draft', "Quotation"),
-    ('sent', "Quotation Sent"),
-    ('sale', "Sales Order"),
-    ('cancel', "Cancelled"),
+    (str(SaleOrderState.DRAFT), "Quotation"),
+    (str(SaleOrderState.SENT), "Quotation Sent"),
+    (str(SaleOrderState.SALE), "Sales Order"),
+    (str(SaleOrderState.CANCEL), "Cancelled"),
 ]
 
 class SaleOrder(models.Model):
@@ -381,7 +383,7 @@ class SaleOrder(models.Model):
             return
         for order in self:
             order = order.with_company(order.company_id)
-            if order.terms_type == 'html' and self.env.company.invoice_terms_html:
+            if order.terms_type == TermsType.HTML and self.env.company.invoice_terms_html:
                 baseurl = html_keep_url(order._get_note_url() + '/terms')
                 context = {'lang': order.partner_id.lang or self.env.user.lang}
                 order.note = _('Terms & Conditions: %s', baseurl)
@@ -593,7 +595,7 @@ class SaleOrder(models.Model):
         epd_lines = []
         if (
             self.payment_term_id.early_discount
-            and self.payment_term_id.early_pay_discount_computation == 'mixed'
+            and self.payment_term_id.early_pay_discount_computation == EarlyPayDiscountComputation.MIXED
             and self.payment_term_id.discount_percentage
         ):
             percentage = self.payment_term_id.discount_percentage
@@ -676,8 +678,8 @@ class SaleOrder(models.Model):
         - invoiced: if all SO lines are invoiced, the SO is invoiced.
         - upselling: if all SO lines are invoiced or upselling, the status is upselling.
         """
-        confirmed_orders = self.filtered(lambda so: so.state == 'sale')
-        (self - confirmed_orders).invoice_status = 'no'
+        confirmed_orders = self.filtered(lambda so: so.state == SaleOrderState.SALE)
+        (self - confirmed_orders).invoice_status = InvoiceStatus.NO
         if not confirmed_orders:
             return
         lines_domain = [('is_downpayment', '=', False), ('display_type', '=', False)]
@@ -690,10 +692,10 @@ class SaleOrder(models.Model):
         ]
         for order in confirmed_orders:
             line_invoice_status = [d[1] for d in line_invoice_status_all if d[0] == order.id]
-            if order.state != 'sale':
-                order.invoice_status = 'no'
-            elif any(invoice_status == 'to invoice' for invoice_status in line_invoice_status):
-                if any(invoice_status == 'no' for invoice_status in line_invoice_status):
+            if order.state != SaleOrderState.SALE:
+                order.invoice_status = InvoiceStatus.NO
+            elif any(invoice_status == InvoiceStatus.TO_INVOICE for invoice_status in line_invoice_status):
+                if any(invoice_status == InvoiceStatus.NO for invoice_status in line_invoice_status):
                     # If only discount/delivery/promotion lines can be invoiced, the SO should not
                     # be invoiceable.
                     invoiceable_domain = lines_domain + [('invoice_status', '=', 'to invoice')]
@@ -702,22 +704,22 @@ class SaleOrder(models.Model):
                         lambda sol: not sol._can_be_invoiced_alone()
                     )
                     if invoiceable_lines == special_lines:
-                        order.invoice_status = 'no'
+                        order.invoice_status = str(InvoiceStatus.NO)
                     else:
-                        order.invoice_status = 'to invoice'
+                        order.invoice_status = str(InvoiceStatus.TO_INVOICE)
                 else:
-                    order.invoice_status = 'to invoice'
-            elif line_invoice_status and all(invoice_status == 'invoiced' for invoice_status in line_invoice_status):
-                order.invoice_status = 'invoiced'
-            elif line_invoice_status and all(invoice_status in ('invoiced', 'upselling') for invoice_status in line_invoice_status):
-                order.invoice_status = 'upselling'
+                    order.invoice_status = str(InvoiceStatus.TO_INVOICE)
+            elif line_invoice_status and all(invoice_status == InvoiceStatus.INVOICED for invoice_status in line_invoice_status):
+                order.invoice_status = str(InvoiceStatus.INVOICED)
+            elif line_invoice_status and all(invoice_status in (str(InvoiceStatus.INVOICED), str(InvoiceStatus.UPSELLING)) for invoice_status in line_invoice_status):
+                order.invoice_status = str(InvoiceStatus.UPSELLING)
             else:
-                order.invoice_status = 'no'
+                order.invoice_status = str(InvoiceStatus.NO)
 
     @api.depends('transaction_ids')
     def _compute_authorized_transaction_ids(self):
         for trans in self:
-            trans.authorized_transaction_ids = trans.transaction_ids.filtered(lambda t: t.state == 'authorized')
+            trans.authorized_transaction_ids = trans.transaction_ids.filtered(lambda t: t.state == PaymentTransactionState.AUTHORIZED)
 
     @api.depends('transaction_ids')
     def _compute_amount_paid(self):
@@ -793,7 +795,7 @@ class SaleOrder(models.Model):
         """
         self.mapped("order_line")  # Prefetch indication
         for order in self:
-            if order.state == 'cancel':
+            if order.state == SaleOrderState.CANCEL:
                 order.expected_date = False
                 continue
             dates_list = order.order_line.filtered(
@@ -928,7 +930,7 @@ class SaleOrder(models.Model):
         self.show_update_pricelist = True
         if self.env.context.get('sale_onchange_first_call'):
             return
-        if self.order_line and self.state == 'draft':
+        if self.order_line and self.state == SaleOrderState.DRAFT:
             return {
                 'warning': {
                     'title': _("Warning for the change of your quotation's company"),
@@ -962,15 +964,15 @@ class SaleOrder(models.Model):
         partner = self.partner_id
 
         # If partner has no warning, check its company
-        if partner.sale_warn == 'no-message' and partner.parent_id:
+        if partner.sale_warn == WarningMessage.NO_MESSAGE and partner.parent_id:
             partner = partner.parent_id
 
-        if partner.sale_warn and partner.sale_warn != 'no-message':
+        if partner.sale_warn and partner.sale_warn != WarningMessage.NO_MESSAGE:
             # Block if partner only has warning but parent company is blocked
-            if partner.sale_warn != 'block' and partner.parent_id and partner.parent_id.sale_warn == 'block':
+            if partner.sale_warn != WarningMessage.BLOCK and partner.parent_id and partner.parent_id.sale_warn == WarningMessage.BLOCK:
                 partner = partner.parent_id
 
-            if partner.sale_warn == 'block':
+            if partner.sale_warn == WarningMessage.BLOCK:
                 self.partner_id = False
 
             return {
@@ -992,7 +994,7 @@ class SaleOrder(models.Model):
     @api.onchange('order_line')
     def _onchange_order_line(self):
         for index, line in enumerate(self.order_line):
-            if line.product_type == 'combo' and line.selected_combo_items:
+            if line.product_type == ProductType.COMBO and line.selected_combo_items:
                 linked_lines = line._get_linked_lines()
                 selected_combo_items = json.loads(line.selected_combo_items)
                 if (
@@ -1076,7 +1078,7 @@ class SaleOrder(models.Model):
                     " You must first cancel it."))
 
     def write(self, vals):
-        if 'pricelist_id' in vals and any(so.state == 'sale' for so in self):
+        if 'pricelist_id' in vals and any(so.state == SaleOrderState.SALE for so in self):
             raise UserError(_("You cannot change the pricelist of a confirmed order !"))
         res = super().write(vals)
         if vals.get('partner_id'):
@@ -1376,7 +1378,7 @@ class SaleOrder(models.Model):
             return self._action_cancel()
 
     def _action_cancel(self):
-        inv = self.invoice_ids.filtered(lambda inv: inv.state == 'draft')
+        inv = self.invoice_ids.filtered(lambda inv: inv.state == AccountMoveState.DRAFT)
         inv.button_cancel()
         return self.write({'state': 'cancel'})
 
@@ -1474,7 +1476,7 @@ class SaleOrder(models.Model):
         txs_to_be_linked = self.transaction_ids.sudo().filtered(
             lambda tx: (
                 tx.state in ('pending', 'authorized')
-                or tx.state == 'done' and not (tx.payment_id and tx.payment_id.is_reconciled)
+                or tx.state == PaymentTransactionState.DONE and not (tx.payment_id and tx.payment_id.is_reconciled)
             )
         )
 
@@ -1558,13 +1560,13 @@ class SaleOrder(models.Model):
         precision = self.env['decimal.precision'].precision_get('Product Unit of Measure')
 
         for line in self.order_line:
-            if line.display_type == 'line_section':
+            if line.display_type == OrderLineDisplayType.LINE_SECTION:
                 # Only invoice the section if one of its lines is invoiceable
                 pending_section = line
                 continue
-            if line.display_type != 'line_note' and float_is_zero(line.qty_to_invoice, precision_digits=precision):
+            if line.display_type != OrderLineDisplayType.LINE_NOTE and float_is_zero(line.qty_to_invoice, precision_digits=precision):
                 continue
-            if line.qty_to_invoice > 0 or (line.qty_to_invoice < 0 and final) or line.display_type == 'line_note':
+            if line.qty_to_invoice > 0 or (line.qty_to_invoice < 0 and final) or line.display_type == OrderLineDisplayType.LINE_NOTE:
                 if line.is_downpayment:
                     # Keep down payment lines separately, to put them together
                     # at the end of the invoice, in a specific dedicated section.
@@ -1727,7 +1729,7 @@ class SaleOrder(models.Model):
                         sign = 1 if invoice_line.move_id.is_inbound() else -1
                         if invoice_line.move_id == move:
                             inv_amt += invoice_line.price_total * sign
-                        elif invoice_line.move_id.state != 'cancel':  # filter out canceled dp lines
+                        elif invoice_line.move_id.state != AccountMoveState.CANCEL:  # filter out canceled dp lines
                             order_amt += invoice_line.price_total * sign
                     if inv_amt and order_amt:
                         # if not inv_amt, this order line is not related to current move
@@ -1736,9 +1738,9 @@ class SaleOrder(models.Model):
 
                 if not move.currency_id.is_zero(delta_amount):
                     receivable_line = move.line_ids.filtered(
-                        lambda aml: aml.account_id.account_type == 'asset_receivable')[:1]
+                        lambda aml: aml.account_id.account_type == AccountType.ASSET_RECEIVABLE)[:1]
                     product_lines = move.line_ids.filtered(
-                        lambda aml: aml.display_type == 'product' and aml.is_downpayment)
+                        lambda aml: aml.display_type == AccountMoveLineDisplayType.PRODUCT and aml.is_downpayment)
                     tax_lines = move.line_ids.filtered(
                         lambda aml: aml.tax_line_id.amount_type not in (False, 'fixed'))
                     if tax_lines and product_lines and receivable_line:
@@ -1775,7 +1777,7 @@ class SaleOrder(models.Model):
     def _discard_tracking(self):
         self.ensure_one()
         return (
-            self.state == 'draft'
+            self.state == SaleOrderState.DRAFT
             and request and request.env.context.get('catalog_skip_tracking')
         )
 
@@ -1793,7 +1795,7 @@ class SaleOrder(models.Model):
     @api.returns('mail.message', lambda value: value.id)
     def message_post(self, **kwargs):
         if self.env.context.get('mark_so_as_sent'):
-            self.filtered(lambda o: o.state == 'draft').with_context(tracking_disable=True).write({'state': 'sent'})
+            self.filtered(lambda o: o.state == SaleOrderState.DRAFT).with_context(tracking_disable=True).write({'state': 'sent'})
         so_ctx = {'mail_post_autofollow': self.env.context.get('mail_post_autofollow', True)}
         if self.env.context.get('mark_so_as_sent') and 'mail_notify_author' not in kwargs:
             kwargs['notify_author'] = self.env.user.partner_id.id in (kwargs.get('partner_ids') or [])
@@ -1823,7 +1825,7 @@ class SaleOrder(models.Model):
             pass
         else:
             access_opt = customer_portal_group[2].setdefault('button_access', {})
-            is_tx_pending = self.get_portal_last_transaction().state == 'pending'
+            is_tx_pending = self.get_portal_last_transaction().state == PaymentTransactionState.PENDING
             if self._has_to_be_signed():
                 if self._has_to_be_paid():
                     access_opt['title'] = _("View Quotation") if is_tx_pending else _("Sign & Pay Quotation")
@@ -1872,9 +1874,9 @@ class SaleOrder(models.Model):
 
     def _track_subtype(self, init_values):
         self.ensure_one()
-        if 'state' in init_values and self.state == 'sale':
+        if 'state' in init_values and self.state == SaleOrderState.SALE:
             return self.env.ref('sale.mt_order_confirmed')
-        elif 'state' in init_values and self.state == 'sent':
+        elif 'state' in init_values and self.state == SaleOrderState.SENT:
             return self.env.ref('sale.mt_order_sent')
         return super()._track_subtype(init_values)
 
@@ -1896,7 +1898,7 @@ class SaleOrder(models.Model):
         invoice the full SO when it's paid.
         """
         for line in self.order_line:
-            if line.state == 'sale':
+            if line.state == SaleOrderState.SALE:
                 # No need to set 0 as it is already the standard logic in the compute method.
                 line.qty_to_invoice = line.product_uom_qty - line.qty_invoiced
 
@@ -2124,7 +2126,7 @@ class SaleOrder(models.Model):
                 and so._origin.invoice_status != 'upselling')
         super()._compute_field_value(field)
 
-        upselling_orders = filtered_self.filtered(lambda so: so.invoice_status == 'upselling')
+        upselling_orders = filtered_self.filtered(lambda so: so.invoice_status == InvoiceStatus.UPSELLING)
         upselling_orders._create_upsell_activity()
 
     #=== BUSINESS METHODS ===#
@@ -2267,8 +2269,8 @@ class SaleOrder(models.Model):
     def _filter_product_documents(self, documents):
         return documents.filtered(
             lambda document:
-                document.attached_on_sale == 'quotation'
-                or (self.state == 'sale' and document.attached_on_sale == 'sale_order')
+                document.attached_on_sale == AttachedOnSale.QUOTATION
+                or (self.state == SaleOrderState.SALE and document.attached_on_sale == AttachedOnSale.SALE_ORDER)
         )
 
     def _update_order_line_info(self, product_id, quantity, **kwargs):
@@ -2317,7 +2319,7 @@ class SaleOrder(models.Model):
         :rtype: bool
         """
         self.ensure_one()
-        return self.state == 'cancel' or self.locked
+        return self.state == SaleOrderState.CANCEL or self.locked
 
     def _is_paid(self):
         """ Return whether the sale order is paid or not based on the linked transactions.
