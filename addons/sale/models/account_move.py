@@ -204,7 +204,11 @@ class AccountMove(models.Model):
             )
             move.partner_credit += max(amount_total_currency - amount_to_invoice_currency, 0.0)
 
+    # new method vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 
+    """
+    Handles the removal and application of loyalty points to the customers card after the payment has been completed.
+    """
     @api.depends('payment_state')
     def _compute_loyalty_points(self):
         for move in self:

@@ -1,9 +1,4 @@
-import ast
-import json
-
-from pygments.lexer import default
-
-from odoo import _, api, fields, models
+from odoo import _, fields, models
 
 class LoyaltyCard(models.Model):
     _name = "sale.loyalty.card"
@@ -46,11 +41,10 @@ class LoyaltyCard(models.Model):
     conversion_rate = fields.Float(string="Conversion Rate", help="Points earned per unit of currency spent", digits=(16, 2), default=0.2)
     threshold = fields.Integer(string="Point Threshold", help="Points required to earn a discount.", default=100)
 
-    currency_id = fields.Many2one('res.currency', string='Currency', required=True, default=lambda self: self.env.company.currency_id)
-    currency_discount = fields.Monetary(string="Discount", currency_field='currency_id', default=5)
+    currency_id = fields.Many2one('res.currency', string='Currency', required=True, default=lambda self: self.env.company.currency_id) #the id of the currency utilised by the company
+    currency_discount = fields.Monetary(string="Stores the discount to be received in currency", currency_field='currency_id', default=5)
     percentage_discount = fields.Float(string="Discount Percentage", help="Represented as all values between zero and one.", digits=(16, 2), default=0.05)
-    discount_type = fields.Selection(string="Discount Type", help="Wether the discount will be in percentages or currency.",
-                                     selection=[("c", "currency"), ("p", "percentage")], default="p")
+    discount_type = fields.Selection(string="Discount Type", help="Wether the discount will be in percentages or currency.", selection=[("c", "currency"), ("p", "percentage")], default="p")
 
     max_discount = fields.Boolean(string="Limit Discount", default=False)
     max_discount_amount = fields.Integer(string="Maximum Discount Allowed", default=50)
@@ -61,3 +55,7 @@ class LoyaltyCard(models.Model):
 
     def discount(self):
         return self.points >= self.threshold
+
+    #check if the discount is limited and if it is crossed
+    def maxDiscount(self, discount):
+        return self.max_discount and self.max_discount_amount < discount

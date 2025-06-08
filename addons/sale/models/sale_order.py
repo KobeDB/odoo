@@ -59,6 +59,15 @@ class SaleOrder(models.Model):
         ('date_order_conditional_required',
          "CHECK((state = 'sale' AND date_order IS NOT NULL) OR state != 'sale')",
          "A confirmed sales order requires a confirmation date."),
+        ('loyalty_discount',
+         'CHECK(loyalty_discount >= 0)',
+         'The discount can\'t be negative.'),
+        ('loyalty_points',
+         'CHECK(loyalty_points >= 0)',
+         'The awarded loyalty points can\'t be a negative amount.'),
+        ('loyalty_points_used',
+         'CHECK(loyalty_points_used >= 0)',
+         'The utilised loyalty points can\'t be a negative amount.'),
     ]
 
     @property
@@ -235,16 +244,21 @@ class SaleOrder(models.Model):
         string="Order Lines",
         copy=True, auto_join=True)
 
+
     amount_untaxed = fields.Monetary(string="Untaxed Amount", store=True, compute='_compute_amounts', tracking=5)
     amount_tax = fields.Monetary(string="Taxes", store=True, compute='_compute_amounts')
     amount_total = fields.Monetary(string="Total", store=True, compute='_compute_amounts', tracking=4)
     amount_to_invoice = fields.Monetary(string="Un-invoiced Balance", compute='_compute_amount_to_invoice')
     amount_invoiced = fields.Monetary(string="Already invoiced", compute='_compute_amount_invoiced')
 
+    # added fields vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+
     loyalty_discount = fields.Monetary(string="Loyalty Discount", help="Computed on untaxed total price", default=0, store=True)
     loyalty_points = fields.Float(string="Loyalty Points", help="Points awarded for this order computed on untaxed total price", default=0.0, store=True)
     loyalty_points_used = fields.Float(string="Loyalty Points Used", help="Number of loyalty points traded in for a discount.", default=0.0, store=True)
     loyalty_points_awarded = fields.Boolean(string="Loyalty Points Awarded", default=False, store=True)
+
+    # added fields ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
     invoice_count = fields.Integer(string="Invoice Count", compute='_get_invoiced')
     invoice_ids = fields.Many2many(
@@ -497,6 +511,11 @@ class SaleOrder(models.Model):
                 )
             order.team_id = cached_teams[key]
 
+    # adapted/new methods vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+
+    """
+    Calculates the total untaxed, tax and taxed prices
+    """
     @api.depends('currency_id', 'company_id', 'payment_term_id', 'state')
     def _compute_amounts(self):
         AccountTax = self.env['account.tax']
@@ -516,14 +535,16 @@ class SaleOrder(models.Model):
             order.amount_total = tax_totals['total_amount_currency']
             order._loyalty_discount()
 
-            if order.loyalty_discount > 0:
-                percentage = order.loyalty_discount/tax_totals['base_amount_currency']
-                discounted_untaxed = tax_totals['base_amount_currency'] * (1 - percentage)
-                discount_tax = tax_totals['tax_amount_currency'] * (1 - percentage)
+            if order.loyalty_discount <= 0: # should never be smaller than zero though
+                return
 
-                order.amount_untaxed = discounted_untaxed
-                order.amount_tax = discount_tax
-                order.amount_total = discounted_untaxed + discount_tax
+            percentage = order.loyalty_discount/tax_totals['base_amount_currency']
+            discounted_untaxed = tax_totals['base_amount_currency'] * (1 - percentage)
+            discount_tax = tax_totals['tax_amount_currency'] * (1 - percentage)
+
+            order.amount_untaxed = discounted_untaxed
+            order.amount_tax = discount_tax
+            order.amount_total = discounted_untaxed + discount_tax
 
             if not LOYALTY_LOGGING:
                 return
@@ -565,7 +586,7 @@ class SaleOrder(models.Model):
             else:
                 _logger.error(f"An unsupported loyalty discount {card.discount_type} was used.")
 
-            if card.max_discount and card.max_discount_amount < order.loyalty_discount:
+            if card.maxDiscount(order.loyalty_discount):
                 order.loyalty_discount = card.max_discount_amount
 
             order.loyalty_points_used = card.threshold
@@ -583,6 +604,8 @@ class SaleOrder(models.Model):
             order.loyalty_points = price * card.conversion_rate
             if LOYALTY_LOGGING:
                 _logger.info(f"Customer: {order.partner_id.name} stands to gain {order.loyalty_points} points on their loyalty card for company {order.company_id.name}")
+
+    # adapted/new methods ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
     def _add_base_lines_for_early_payment_discount(self):
         """
