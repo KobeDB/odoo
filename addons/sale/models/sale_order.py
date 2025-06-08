@@ -559,14 +559,12 @@ class SaleOrder(models.Model):
     def _loyalty_discount(self):
         for order in self:
             order.loyalty_discount = 0.0
-            card = self.env['sale.loyalty.card'].search([
-                ('partner_id', '=', order.partner_id.id),
-                ('company_id', '=', order.company_id.id)
-            ], limit=1)
+            card = self._get_card(order)
             if not card:
                 _logger.warning(f"Missing loyalty card for customer: {order.partner_id.name} for company: {order.company_id.name}")
                 if not LOYALTY_LOGGING:
                     return
+                # AUTO creation of new card for existing customers only for 'testing' purposes # TODO remove
                 _logger.info(f"Created loyalty card for customer: {order.partner_id.name} for company: {order.company_id.name}")
                 order.company_id._create_loyalty_cards_for_customer(order.partner_id)
                 self._loyalty_points()
@@ -595,15 +593,21 @@ class SaleOrder(models.Model):
 
     def _loyalty_points(self):
         for order in self:
-            card = self.env['sale.loyalty.card'].search([
-                ('partner_id', '=', order.partner_id.id),
-                ('company_id', '=', order.company_id.id)
-            ], limit=1)
+            card = self._get_card(order)
+            if not card:
+                continue
 
             price = order.amount_untaxed - order.loyalty_discount
             order.loyalty_points = price * card.conversion_rate
             if LOYALTY_LOGGING:
                 _logger.info(f"Customer: {order.partner_id.name} stands to gain {order.loyalty_points} points on their loyalty card for company {order.company_id.name}")
+
+    def _get_card(self, order):
+        card = self.env['sale.loyalty.card'].search([
+            ('partner_id', '=', order.partner_id.id),
+            ('company_id', '=', order.company_id.id)
+        ], limit=1)
+        return card
 
     # adapted/new methods ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

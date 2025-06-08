@@ -26,8 +26,8 @@ class LoyaltyCard(models.Model):
          'The percentage discount must be greater than 0%.'
         ),
         ('check_max_discount_amount',
-         'CHECK(max_discount_amount >= 0)',
-         'The max_discount_amount can\'t be negative.'
+         'CHECK(max_discount_amount > 0)',
+         'The max_discount_amount can\'t be negative or zero.'
         ),
         (
             'unique_customer_company_card',
