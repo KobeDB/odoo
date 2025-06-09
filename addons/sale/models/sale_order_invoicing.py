@@ -1,4 +1,5 @@
 from odoo import Command
+from odoo.tools import float_is_zero
 from itertools import groupby
 
 class SaleOrderInvoicing:
@@ -167,3 +168,83 @@ class SaleOrderInvoicing:
         # Manage the creation of invoices in sudo because a salesperson must be able to generate an invoice from a
         # sale order without "billing" access rights. However, he should not be able to create an invoice from scratch.
         return self.env['account.move'].sudo().with_context(default_move_type='out_invoice').create(invoice_vals_list)
+    
+    def _get_invoiceable_lines(self, final=False):
+        down_payment_line_ids = []
+        invoiceable_line_ids = []
+        pending_section = None
+        precision = self.env['decimal.precision'].precision_get('Product Unit of Measure')
+
+        for line in self.order.order_line:
+            if line.display_type == 'line_section':
+                pending_section = line
+                continue
+            if line.display_type != 'line_note' and float_is_zero(line.qty_to_invoice, precision_digits=precision):
+                continue
+            if line.qty_to_invoice > 0 or (line.qty_to_invoice < 0 and final) or line.display_type == 'line_note':
+                if line.is_downpayment:
+                    down_payment_line_ids.append(line.id)
+                    continue
+                if pending_section:
+                    invoiceable_line_ids.append(pending_section.id)
+                    pending_section = None
+                invoiceable_line_ids.append(line.id)
+
+        return self.env['sale.order.line'].browse(invoiceable_line_ids + down_payment_line_ids)
+
+    @staticmethod
+    def _nothing_to_invoice_error_message():
+        return _(
+            "Cannot create an invoice. No items are available to invoice.\n\n"
+            "To resolve this issue, please ensure that:\n"
+            "   \u2022 The products have been delivered before attempting to invoice them.\n"
+            "   \u2022 The invoicing policy of the product is configured correctly.\n\n"
+            "If you want to invoice based on ordered quantities instead:\n"
+            "   \u2022 For consumable or storable products, open the product, go to the 'General Information' tab and change the 'Invoicing Policy' from 'Delivered Quantities' to 'Ordered Quantities'.\n"
+            "   \u2022 For services (and other products), change the 'Invoicing Policy' to 'Prepaid/Fixed Price'.\n"
+        )
+    
+    def prepare_invoice_dict(self):
+        """
+        Prepare the dict of values to create a new invoice for the order.
+        Exact copy of sale.order._prepare_invoice, adapted to self.order.
+        """
+        order = self.order
+        order.ensure_one()
+
+        txs_to_be_linked = order.transaction_ids.sudo().filtered(
+            lambda tx: (
+                tx.state in ('pending', 'authorized')
+                or tx.state == 'done' and not (tx.payment_id and tx.payment_id.is_reconciled)
+            )
+        )
+
+        values = {
+            'ref': order.client_order_ref or '',
+            'move_type': 'out_invoice',
+            'narration': order.note,
+            'currency_id': order.currency_id.id,
+            'campaign_id': order.campaign_id.id,
+            'medium_id': order.medium_id.id,
+            'source_id': order.source_id.id,
+            'team_id': order.team_id.id,
+            'partner_id': order.partner_invoice_id.id,
+            'partner_shipping_id': order.partner_shipping_id.id,
+            'fiscal_position_id': (
+                order.fiscal_position_id
+                or order.fiscal_position_id._get_fiscal_position(order.partner_invoice_id)
+            ).id,
+            'invoice_origin': order.name,
+            'invoice_payment_term_id': order.payment_term_id.id,
+            'invoice_user_id': order.user_id.id,
+            'payment_reference': order.reference,
+            'transaction_ids': [Command.set(txs_to_be_linked.ids)],
+            'company_id': order.company_id.id,
+            'invoice_line_ids': [],
+            'user_id': order.user_id.id,
+        }
+
+        if order.journal_id:
+            values['journal_id'] = order.journal_id.id
+
+        return values

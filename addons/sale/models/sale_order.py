@@ -1358,45 +1358,7 @@ class SaleOrder(models.Model):
     # INVOICING #
 
     def _prepare_invoice(self):
-        """
-        Prepare the dict of values to create the new invoice for a sales order. This method may be
-        overridden to implement custom invoice generation (making sure to call super() to establish
-        a clean extension chain).
-        """
-        self.ensure_one()
-
-        txs_to_be_linked = self.transaction_ids.sudo().filtered(
-            lambda tx: (
-                tx.state in ('pending', 'authorized')
-                or tx.state == 'done' and not (tx.payment_id and tx.payment_id.is_reconciled)
-            )
-        )
-
-        values = {
-            'ref': self.client_order_ref or '',
-            'move_type': 'out_invoice',
-            'narration': self.note,
-            'currency_id': self.currency_id.id,
-            'campaign_id': self.campaign_id.id,
-            'medium_id': self.medium_id.id,
-            'source_id': self.source_id.id,
-            'team_id': self.team_id.id,
-            'partner_id': self.partner_invoice_id.id,
-            'partner_shipping_id': self.partner_shipping_id.id,
-            'fiscal_position_id': (self.fiscal_position_id or self.fiscal_position_id._get_fiscal_position(self.partner_invoice_id)).id,
-            'invoice_origin': self.name,
-            'invoice_payment_term_id': self.payment_term_id.id,
-            'invoice_user_id': self.user_id.id,
-            'payment_reference': self.reference,
-            'transaction_ids': [Command.set(txs_to_be_linked.ids)],
-            'company_id': self.company_id.id,
-            'invoice_line_ids': [],
-            'user_id': self.user_id.id,
-        }
-        if self.journal_id:
-            values['journal_id'] = self.journal_id.id
-        return values
-
+        return SaleOrderInvoicing(self).prepare_invoice_dict()
     def action_view_invoice(self, invoices=False):
         if not invoices:
             invoices = self.mapped('invoice_ids')
@@ -1426,47 +1388,13 @@ class SaleOrder(models.Model):
         action['context'] = context
         return action
 
-    def _nothing_to_invoice_error_message(self):
-        return _(
-            "Cannot create an invoice. No items are available to invoice.\n\n"
-            "To resolve this issue, please ensure that:\n"
-            "   \u2022 The products have been delivered before attempting to invoice them.\n"
-            "   \u2022 The invoicing policy of the product is configured correctly.\n\n"
-            "If you want to invoice based on ordered quantities instead:\n"
-            "   \u2022 For consumable or storable products, open the product, go to the 'General Information' tab and change the 'Invoicing Policy' from 'Delivered Quantities' to 'Ordered Quantities'.\n"
-            "   \u2022 For services (and other products), change the 'Invoicing Policy' to 'Prepaid/Fixed Price'.\n"
-        )
-
     def _get_update_prices_lines(self):
         """ Hook to exclude specific lines which should not be updated based on price list recomputation """
         return self.order_line.filtered(lambda line: not line.display_type)
 
     def _get_invoiceable_lines(self, final=False):
         """Return the invoiceable lines for order `self`."""
-        down_payment_line_ids = []
-        invoiceable_line_ids = []
-        pending_section = None
-        precision = self.env['decimal.precision'].precision_get('Product Unit of Measure')
-
-        for line in self.order_line:
-            if line.display_type == 'line_section':
-                # Only invoice the section if one of its lines is invoiceable
-                pending_section = line
-                continue
-            if line.display_type != 'line_note' and float_is_zero(line.qty_to_invoice, precision_digits=precision):
-                continue
-            if line.qty_to_invoice > 0 or (line.qty_to_invoice < 0 and final) or line.display_type == 'line_note':
-                if line.is_downpayment:
-                    # Keep down payment lines separately, to put them together
-                    # at the end of the invoice, in a specific dedicated section.
-                    down_payment_line_ids.append(line.id)
-                    continue
-                if pending_section:
-                    invoiceable_line_ids.append(pending_section.id)
-                    pending_section = None
-                invoiceable_line_ids.append(line.id)
-
-        return self.env['sale.order.line'].browse(invoiceable_line_ids + down_payment_line_ids)
+        return SaleOrderInvoicing(self)._get_invoiceable_lines(final)
 
     def _create_invoices(self, grouped=False, final=False, date=None):
         """ Create invoice(s) for the given Sales Order(s).
@@ -1495,7 +1423,7 @@ class SaleOrder(models.Model):
                 invoice_vals_list.append(invoice_vals)
 
         if not invoice_vals_list and self._context.get('raise_if_nothing_to_invoice', True):
-            raise UserError(self._nothing_to_invoice_error_message())
+            raise UserError(SaleOrderInvoicing._nothing_to_invoice_error_message())
 
         # 2) Manage 'grouped' parameter: group by (partner_id, currency_id).
         if not grouped:
