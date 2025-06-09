@@ -1,3 +1,5 @@
+from odoo import fields
+
 class SaleOrderPricing:
     def __init__(self, order):
         self.order = order
@@ -82,4 +84,46 @@ class SaleOrderPricing:
             base_lines=base_lines,
             currency=self.currency,
             company=self.company,
+        )
+
+    def _get_update_prices_lines(self):
+        return self.order.order_line.filtered(lambda line: not line.display_type)
+
+
+    def recompute_prices(self):
+        lines = self._get_update_prices_lines()
+
+        lines.invalidate_recordset(['pricelist_item_id'])
+
+        lines.with_context(force_price_recomputation=True)._compute_price_unit()
+        lines.discount = 0.0
+        lines._compute_discount()
+
+        self.order.show_update_pricelist = False
+    
+    def recompute_taxes(self):
+        lines_to_recompute = self.order.order_line.filtered(lambda line: not line.display_type)
+        lines_to_recompute._compute_tax_id()
+        self.order.show_update_fpos = False
+    
+    def compute_amount_undiscounted(self):
+        total = 0.0
+        for line in self.order.order_lines:
+            if line.discount != 100:
+                total += (line.price_subtotal * 100.0) / (100.0 - line.discount)
+            else:
+                total += line.price_unit * line.product_uom_qty
+        return total
+    
+    def get_currency_id(self):
+        return self.order.pricelist_id.currency_id or self.order.company_id.currency_id
+
+    def get_currency_rate(self):
+        currency = self.order.currency_id
+        date = (self.order.date_order or fields.Datetime.now()).date()
+        return self.env['res.currency']._get_conversion_rate(
+            from_currency=self.order.company_id.currency_id,
+            to_currency=currency,
+            company=self.order.company_id,
+            date=date,
         )

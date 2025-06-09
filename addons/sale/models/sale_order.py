@@ -445,17 +445,13 @@ class SaleOrder(models.Model):
     @api.depends('pricelist_id', 'company_id')
     def _compute_currency_id(self):
         for order in self:
-            order.currency_id = order.pricelist_id.currency_id or order.company_id.currency_id
+            order.currency_id = SaleOrderPricing(order).get_currency_id()
 
     @api.depends('currency_id', 'date_order', 'company_id')
     def _compute_currency_rate(self):
         for order in self:
-            order.currency_rate = self.env['res.currency']._get_conversion_rate(
-                from_currency=order.company_id.currency_id,
-                to_currency=order.currency_id,
-                company=order.company_id,
-                date=(order.date_order or fields.Datetime.now()).date(),
-            )
+            pricing = SaleOrderPricing(order)
+            order.currency_rate = pricing.get_currency_rate()
 
     @api.depends('company_id')
     def _compute_has_active_pricelist(self):
@@ -669,10 +665,8 @@ class SaleOrder(models.Model):
 
     def _compute_amount_undiscounted(self):
         for order in self:
-            total = 0.0
-            for line in order.order_line:
-                total += (line.price_subtotal * 100)/(100-line.discount) if line.discount != 100 else (line.price_unit * line.product_uom_qty)
-            order.amount_undiscounted = total
+            pricing = SaleOrderPricing(order)
+            order.amount_undiscounted = pricing.compute_amount_undiscounted()
 
     @api.depends('client_order_ref', 'date_order', 'origin', 'partner_id')
     def _compute_duplicated_order_ids(self):
@@ -1340,9 +1334,7 @@ class SaleOrder(models.Model):
             )
 
     def _recompute_taxes(self):
-        lines_to_recompute = self.order_line.filtered(lambda line: not line.display_type)
-        lines_to_recompute._compute_tax_id()
-        self.show_update_fpos = False
+        SaleOrderPricing(self).recompute_taxes()
 
     def action_update_prices(self):
         self.ensure_one()
@@ -1357,15 +1349,7 @@ class SaleOrder(models.Model):
         self.message_post(body=message)
 
     def _recompute_prices(self):
-        lines_to_recompute = self._get_update_prices_lines()
-        lines_to_recompute.invalidate_recordset(['pricelist_item_id'])
-        lines_to_recompute.with_context(force_price_recomputation=True)._compute_price_unit()
-        # Special case: we want to overwrite the existing discount on _recompute_prices call
-        # i.e. to make sure the discount is correctly reset
-        # if pricelist rule is different than when the price was first computed.
-        lines_to_recompute.discount = 0.0
-        lines_to_recompute._compute_discount()
-        self.show_update_pricelist = False
+        SaleOrderPricing(self).recompute_prices()
 
     def _default_order_line_values(self, child_field=False):
         default_data = super()._default_order_line_values(child_field)
