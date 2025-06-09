@@ -563,19 +563,19 @@ class SaleOrder(models.Model):
             if not card:
                 _logger.warning(f"Missing loyalty card for customer: {order.partner_id.name} for company: {order.company_id.name}")
                 if not LOYALTY_LOGGING:
-                    return
+                    continue
                 # AUTO creation of new card for existing customers only for 'testing' purposes # TODO remove
                 _logger.info(f"Created loyalty card for customer: {order.partner_id.name} for company: {order.company_id.name}")
                 order.company_id._create_loyalty_cards_for_customer(order.partner_id)
                 self._loyalty_points()
                 # wont have to apply discount yet since card just created
-                return
+                continue
 
             if not card.discount():
                 self._loyalty_points()
                 if LOYALTY_LOGGING:
                     _logger.info(f"Customer: {order.partner_id.name} has insufficient points ({card.points}) on their loyalty card for company {order.company_id.name}")
-                return
+                continue
 
             if card.discount_type == "p":
                 order.loyalty_discount = order.amount_untaxed * card.percentage_discount

@@ -236,15 +236,15 @@ class AccountMove(models.Model):
             move.loyalty_points_applied = True
             order.loyalty_points_awarded = True
             if LOYALTY_LOGGING:
-                _logger.info(f"-------------------------------------------------------------------------------------------------------------------------------\n"
+                _logger.info(f"--------------------------------------------------------------------------------------------------------------------------------\n"
                              f"Customer: {order.partner_id.name} was awarded ({order.loyalty_points}) on their loyalty card for company {order.company_id.name}\n"
                              f"and now has a total of {card.points} points available.\n"
-                             f"-------------------------------------------------------------------------------------------------------------------------------")
+                             f"--------------------------------------------------------------------------------------------------------------------------------")
             if order.loyalty_points_used > 0:
                 card.points -= order.loyalty_points_used
                 if not LOYALTY_LOGGING:
                     continue
-                _logger.info(f"===============================================================================================================================\n"
+                _logger.info(f"================================================================================================================================\n"
                              f"Customer: {order.partner_id.name} used {order.loyalty_points_used} from their loyalty card for company {order.company_id.name}\n"
                              f"on their purchase and now has a total of {card.points} points remaining.\n"
-                             f"===============================================================================================================================")
+                             f"================================================================================================================================")

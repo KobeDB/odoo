@@ -1,5 +1,8 @@
 from odoo import _, fields, models
 
+import logging
+_logger = logging.getLogger(__name__)
+
 class LoyaltyCard(models.Model):
     _name = "sale.loyalty.card"
     _description = "Loyalty Card"

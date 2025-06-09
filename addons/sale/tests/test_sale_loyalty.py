@@ -27,12 +27,12 @@ class TestSaleOrderLoyalty(TransactionCase):
             'currency_id': self.currency.id,
         })
 
-        existing_card = self.env['sale.loyalty.card'].search([
+        self.env['sale.loyalty.card'].search([
             ('partner_id', '=', self.partner.id),
             ('company_id', '=', self.company.id)
-        ], limit=1)
+        ]).unlink()
 
-        self.loyalty_card = existing_card or self.env['sale.loyalty.card'].create({
+        self.loyalty_card = self.env['sale.loyalty.card'].create({
             'name': 'Test Card',
             'partner_id': self.partner.id,
             'company_id': self.company.id,
@@ -40,7 +40,7 @@ class TestSaleOrderLoyalty(TransactionCase):
             'discount_type': 'p',
             'percentage_discount': 0.1,
             'threshold': 100,
-            'conversion_rate': 0.05,
+            'conversion_rate': 0.2,
             'currency_discount': 5.0,
             'max_discount': False,
             'max_discount_amount': 50,
@@ -62,14 +62,12 @@ class TestSaleOrderLoyalty(TransactionCase):
 
     def test_loyalty_discount_calculation(self):
         self.order._compute_amounts()
-        _logger.warning(f"Untaxed: {self.order.amount_untaxed}")
-        _logger.warning(f"Discount: {self.order.loyalty_discount}")
         self.assertAlmostEqual(self.order.loyalty_discount, 20.0000, 4, "Loyalty discount should be applied.")
         self.assertEqual(self.order.loyalty_points_used, 100.0, "Loyalty points used should match threshold.")
 
     def test_loyalty_points_awarded_calculation(self):
         self.order._compute_amounts()
-        expected_points = (self.order.amount_untaxed - self.order.loyalty_discount) * self.loyalty_card.conversion_rate
+        expected_points = self.order.amount_untaxed * self.loyalty_card.conversion_rate # discount already incorporated in amount untaxed
         self.assertAlmostEqual(self.order.loyalty_points, expected_points, places=2)
 
     def test_max_discount_enforced(self):
