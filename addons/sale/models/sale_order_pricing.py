@@ -108,7 +108,7 @@ class SaleOrderPricing:
     
     def compute_amount_undiscounted(self):
         total = 0.0
-        for line in self.order.order_lines:
+        for line in self.order.order_line:
             if line.discount != 100:
                 total += (line.price_subtotal * 100.0) / (100.0 - line.discount)
             else:
