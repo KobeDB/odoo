@@ -1,4 +1,9 @@
-from enum import StrEnum
+from enum import Enum
+
+# My own StrEnum implementation ( to keep compatibility with python versions < 3.11)
+class StrEnum(str, Enum):
+    def __str__(self):
+        return str(self.value)
 
 """ terms_type in sale/sale_order.py """
 class TermsType(StrEnum):
