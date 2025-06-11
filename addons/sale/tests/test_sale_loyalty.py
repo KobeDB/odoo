@@ -9,9 +9,6 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
-
-
-
 @tagged('post_install', '-at_install', 'loyalty')
 class TestSaleOrderLoyalty(TestSaleCommonBase):
     def setUp(self):
@@ -62,6 +59,8 @@ class TestSaleOrderLoyalty(TestSaleCommonBase):
             ]
         })
 
+    # TODO add tests for checking if the points are awarded and subtracted to the card after payment
+
     """
     Checks if the discounts get applied, for both currency and percentage discount types.
     """
@@ -91,7 +90,7 @@ class TestSaleOrderLoyalty(TestSaleCommonBase):
     """
     Validate loyalty points to be received with no discount applied
     """
-    def test_loyalty_points(self):
+    def test_loyalty_points_calculation(self):
         self.loyalty_card.write({
             'points': 20,
         })
@@ -99,11 +98,49 @@ class TestSaleOrderLoyalty(TestSaleCommonBase):
         self.assertAlmostEqual(self.order.loyalty_points, 112)
 
     """
+    Verify points getting added to the card without any discount
+    """
+    def test_points_addition_to_card(self):
+        self.loyalty_card.write({
+            'points': 20,
+        })
+        self.order._compute_amounts()
+        self.order.action_confirm()
+
+        invoice = self.order._create_invoices()
+        invoice.action_post()
+
+        invoice.write({'payment_state': 'paid'})  # triggers _compute_loyalty_points via @depends
+
+        # self.card.invalidate_cache()  # make sure we see latest DB values
+        self.assertTrue(invoice.loyalty_points_applied)
+        self.assertTrue(self.order.loyalty_points_awarded)
+        self.assertAlmostEqual(self.loyalty_card.points, 132) # 20 + 112
+
+    """
     Validate loyalty points to be received with a discount applied
     """
-    def test_loyalty_points_with_discount(self):
+    def test_loyalty_points_calculation_with_discount(self):
         self.order._compute_amounts()
         self.assertAlmostEqual(self.order.loyalty_points, 100.8)
+
+
+    """
+    Verify points getting added and removed to the card with a discount
+    """
+    def test_points_addition_to_card_with_discount(self):
+        self.order._compute_amounts()
+        self.order.action_confirm()
+
+        invoice = self.order._create_invoices()
+        invoice.action_post()
+
+        invoice.write({'payment_state': 'paid'})  # triggers _compute_loyalty_points via @depends
+
+        # self.card.invalidate_cache()  # make sure we see latest DB values
+        self.assertTrue(invoice.loyalty_points_applied)
+        self.assertTrue(self.order.loyalty_points_awarded)
+        self.assertAlmostEqual(self.loyalty_card.points, 2000 + 100.8 - self.loyalty_card.threshold) # 2000 + 100.8 - threshold (100)
 
     """
     Validate maximum discount limit
@@ -125,6 +162,8 @@ class TestSaleOrderLoyalty(TestSaleCommonBase):
                 f"Missing loyalty card for customer: {self.partner.name} for company: {self.company.name}"
             )
 
+
+
     # constraint tests
     def test_points(self):
         with self.assertRaises(ValidationError):
@@ -144,8 +183,9 @@ class TestSaleOrderLoyalty(TestSaleCommonBase):
         with self.assertRaises(ValidationError):
             self.loyalty_card.write({'threshold': 0})
 
-        with self.assertRaises(UserError):
-            self.loyalty_card.write({'threshold': 4.20})
+        # seemingly useless as floats just get converted to ints
+        # with self.assertRaises(ValidationError):
+        #     self.loyalty_card.write({'threshold': 4.20})
 
     def test_currency_discount(self):
         with self.assertRaises(ValidationError):

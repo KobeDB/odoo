@@ -114,7 +114,7 @@ class LoyaltyCard(models.Model):
     @api.constrains('threshold')
     def _check_threshold(self):
         for card in self:
-            if not isinstance(card.threshold, int):
+            if not isinstance(card.threshold, int): # seemingly useless as floats just get converted to ints
                 raise ValidationError("The threshold can't be a decimal number.")
             if card.threshold <= 0:
                 raise ValidationError("The threshold can't be zero or negative.")
