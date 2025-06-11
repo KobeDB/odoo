@@ -88,20 +88,17 @@ class LoyaltyCard(models.Model):
         return super().write(vals)
 
 
+    # small helpers
     def discount(self):
         return self.points >= self.threshold
 
-    #check if the discount is limited and if it is crossed
+    # returns if the discount is limited and if it is crossed
     def maxDiscount(self, discount):
         return self.max_discount and self.max_discount_amount < discount
 
-    def types(self) -> list[chr]:
-        field = self._fields['discount_type']
-        types = field.selection(self) if callable(field.selection) else field.selection
-        return types[:][0]
-
-
-    # the same constraints as the SQL constraint, this is needed since the SQL constraints are only checked upon DB commits.
+    # constraint checkers,
+    # the same constraints as the SQL constraint,
+    # this is needed since the SQL constraints are only checked upon DB commits.
     @api.constrains('points')
     def _check_points(self):
         for card in self:
