@@ -1,6 +1,9 @@
-from odoo import _, fields, models
+from odoo import _, fields, models, api
+from odoo.exceptions import ValidationError
 
 import logging
+from odoo.api import ondelete
+
 _logger = logging.getLogger(__name__)
 
 class LoyaltyCard(models.Model):
@@ -26,7 +29,7 @@ class LoyaltyCard(models.Model):
         ),
         ('check_percentage_discount',
          'CHECK(percentage_discount > 0 AND percentage_discount <= 1)',
-         'The percentage discount must be greater than 0%.'
+         'The percentage discount must be greater than 0% and maximally be a 100%.'
         ),
         ('check_max_discount_amount',
          'CHECK(max_discount_amount > 0)',
@@ -50,11 +53,40 @@ class LoyaltyCard(models.Model):
     discount_type = fields.Selection(string="Discount Type", help="Wether the discount will be in percentages or currency.", selection=[("c", "currency"), ("p", "percentage")], default="p")
 
     max_discount = fields.Boolean(string="Limit Discount", default=False)
-    max_discount_amount = fields.Integer(string="Maximum Discount Allowed", default=50)
+    max_discount_amount = fields.Monetary(string="Maximum Discount Allowed", currency_field='currency_id', default=50)
 
     # links loyalty card, with customer and company pair(s).
-    partner_id = fields.Many2one('res.partner', string="Partner", required=True, domain="[('customer_rank', '>', 0)]",)
-    company_id = fields.Many2one('res.company', string="Company", required=True)
+    # customer rank defines if they can get quotations and invoices
+    partner_id = fields.Many2one('res.partner', string="Partner", required=True, domain="[('customer_rank', '>', 0)]", ondelete="cascade")
+    company_id = fields.Many2one('res.company', string="Company", required=True, ondelete='cascade')
+
+    """
+    Overwrite of create and write methods to ensure only one loyalty card exists per partner-company pair.
+    """
+    @api.model_create_multi
+    def create(self, vals):
+        for v in vals:
+            domain = [
+                ('partner_id', '=', v['partner_id']),
+                ('company_id', '=', v['company_id']),
+            ]
+            if self.search_count(domain):
+                raise ValidationError("A customer can have only one loyalty card per company.")
+        return super().create(vals)
+
+    def write(self, vals):
+        for card in self:
+            partner_id = vals.get('partner_id', card.partner_id.id)
+            company_id = vals.get('company_id', card.company_id.id)
+            domain = [
+                ('partner_id', '=', partner_id),
+                ('company_id', '=', company_id),
+                ('id', '!=', card.id),
+            ]
+            if self.search_count(domain):
+                raise ValidationError("A customer can have only one loyalty card per company.")
+        return super().write(vals)
+
 
     def discount(self):
         return self.points >= self.threshold
@@ -62,3 +94,51 @@ class LoyaltyCard(models.Model):
     #check if the discount is limited and if it is crossed
     def maxDiscount(self, discount):
         return self.max_discount and self.max_discount_amount < discount
+
+    def types(self) -> list[chr]:
+        field = self._fields['discount_type']
+        types = field.selection(self) if callable(field.selection) else field.selection
+        return types[:][0]
+
+
+    # the same constraints as the SQL constraint, this is needed since the SQL constraints are only checked upon DB commits.
+    @api.constrains('points')
+    def _check_points(self):
+        for card in self:
+            if card.points < 0:
+                raise ValidationError("The number of loyalty points can't be negative.")
+
+    @api.constrains('conversion_rate')
+    def _check_conversion_rate(self):
+        for card in self:
+            if card.conversion_rate <= 0:
+                raise ValidationError("The conversion rate can't be zero or negative.")
+
+    @api.constrains('threshold')
+    def _check_threshold(self):
+        for card in self:
+            if not isinstance(card.threshold, int):
+                raise ValidationError("The threshold can't be a decimal number.")
+            if card.threshold <= 0:
+                raise ValidationError("The threshold can't be zero or negative.")
+
+    @api.constrains('currency_discount')
+    def _check_currency_discount(self):
+        for card in self:
+            if card.currency_discount <= 0:
+                raise ValidationError("The currency_discount can't be zero or negative. (Don't be a cheap skate)")
+
+    @api.constrains('percentage_discount')
+    def _check_percentage_discount(self):
+        for card in self:
+            if card.percentage_discount <= 0:
+                raise ValidationError("The percentage_discount can't be zero or negative.")
+            if card.percentage_discount > 1:
+                raise ValidationError("The percentage_discount can't be greater than 1 (100%).")
+
+    @api.constrains('max_discount_amount')
+    def _check_max_discount_amount(self):
+        for card in self:
+            if card.max_discount_amount <= 0:
+                raise ValidationError("The max_discount_amount can't be zero or negative.")
+

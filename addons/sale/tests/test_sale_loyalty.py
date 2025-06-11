@@ -1,31 +1,33 @@
+from odoo.addons.sale.tests.common import TestSaleCommonBase
 from odoo.tests.common import TransactionCase
+
 from odoo.fields import Command
 from odoo.tests import tagged
 from unittest.mock import patch
+from odoo.exceptions import ValidationError, UserError
 import logging
 
 _logger = logging.getLogger(__name__)
 
-@tagged('post_install', '-at_install', 'loyalty')
-class TestSaleOrderLoyalty(TransactionCase):
 
+
+
+@tagged('post_install', '-at_install', 'loyalty')
+class TestSaleOrderLoyalty(TestSaleCommonBase):
     def setUp(self):
         super().setUp()
+        self.test_data = self.setup_sale_configuration_for_company(self.env.company)
+
         self.company = self.env.company
         self.currency = self.company.currency_id
 
         self.partner = self.env['res.partner'].create({
-            'name': f'Test Partner {self._testMethodName}',
+            'name': 'Test Partner',
             'customer_rank': 1,
             'company_id': self.company.id,
         })
 
-        self.product = self.env['product.product'].create({
-            'name': f'Test Product {self._testMethodName}',
-            'list_price': 100.0,
-            'standard_price': 50.0,
-            'currency_id': self.currency.id,
-        })
+        self.product = self.test_data['product_order_cost']
 
         self.env['sale.loyalty.card'].search([
             ('partner_id', '=', self.partner.id),
@@ -55,27 +57,67 @@ class TestSaleOrderLoyalty(TransactionCase):
                 Command.create({
                     'product_id': self.product.id,
                     'product_uom_qty': 2,
-                    'price_unit': 100.0,
+                    'price_unit': self.product.list_price,
                 })
             ]
         })
 
-    def test_loyalty_discount_calculation(self):
+    """
+    Checks if the discounts get applied, for both currency and percentage discount types.
+    """
+    def test_discount(self):
         self.order._compute_amounts()
-        self.assertAlmostEqual(self.order.loyalty_discount, 20.0000, 4, "Loyalty discount should be applied.")
-        self.assertEqual(self.order.loyalty_points_used, 100.0, "Loyalty points used should match threshold.")
+        self.assertAlmostEqual(self.order.loyalty_discount, 56, 2, "Loyalty discount should be applied.")
+        self.assertEqual(self.order.loyalty_points_used, self.loyalty_card.threshold,"Loyalty points used should match threshold.")
 
-    def test_loyalty_points_awarded_calculation(self):
+        self.loyalty_card.write({
+            'discount_type': 'c',
+        })
         self.order._compute_amounts()
-        expected_points = self.order.amount_untaxed * self.loyalty_card.conversion_rate # discount already incorporated in amount untaxed
-        self.assertAlmostEqual(self.order.loyalty_points, expected_points, places=2)
+        self.assertEqual(self.order.loyalty_discount, self.loyalty_card.currency_discount, "Loyalty discount should be applied.")
+        self.assertEqual(self.order.loyalty_points_used, self.loyalty_card.threshold, "Loyalty points used should match threshold.")
 
-    def test_max_discount_enforced(self):
-        self.loyalty_card.write({'max_discount': True, 'max_discount_amount': 10.0})
+    """
+    Don't provide discount in case of insufficient points total
+    """
+    def test_insufficient_points(self):
+        self.loyalty_card.write({
+            'points':20,
+        })
         self.order._compute_amounts()
-        self.assertLessEqual(self.order.loyalty_discount, 10.0, "Loyalty discount should not exceed max_discount_amount.")
+        self.assertAlmostEqual(self.order.loyalty_discount, 0, 2, "Loyalty discount should be applied in case of insufficient points.")
+        self.assertEqual(self.order.loyalty_points_used, 0,"No Loyalty points should used in case of insufficient points.")
 
-    def test_warning_logged_if_loyalty_card_missing(self):
+    """
+    Validate loyalty points to be received with no discount applied
+    """
+    def test_loyalty_points(self):
+        self.loyalty_card.write({
+            'points': 20,
+        })
+        self.order._loyalty_points()
+        self.assertAlmostEqual(self.order.loyalty_points, 112)
+
+    """
+    Validate loyalty points to be received with a discount applied
+    """
+    def test_loyalty_points_with_discount(self):
+        self.order._compute_amounts()
+        self.assertAlmostEqual(self.order.loyalty_points, 100.8)
+
+    """
+    Validate maximum discount limit
+    """
+    def test_max_discount(self):
+        self.loyalty_card.write({
+            'max_discount': True,
+        })
+        self.order._compute_amounts()
+        self.assertEqual(self.order.loyalty_discount, 50, "The discount shouldn't exceed the maximum discount allowed")
+        self.assertEqual(self.order.loyalty_points_used, self.loyalty_card.threshold,"Loyalty points used should match threshold.")
+
+
+    def test_loyalty_card_missing(self):
         self.loyalty_card.unlink()
         with patch('odoo.addons.sale.models.sale_order._logger') as mock_logger:
             self.order._compute_amounts()
@@ -83,7 +125,56 @@ class TestSaleOrderLoyalty(TransactionCase):
                 f"Missing loyalty card for customer: {self.partner.name} for company: {self.company.name}"
             )
 
-    def test_no_discount_if_threshold_not_met(self):
-        self.loyalty_card.write({'points': 50})
-        self.order._compute_amounts()
-        self.assertEqual(self.order.loyalty_discount, 0.0, "No discount should be applied if threshold not met.")
+    # constraint tests
+    def test_points(self):
+        with self.assertRaises(ValidationError):
+            self.loyalty_card.write({'points': -20})
+
+    def test_conversion_rate(self):
+        with self.assertRaises(ValidationError):
+            self.loyalty_card.write({'conversion_rate': -0.1})
+
+        with self.assertRaises(ValidationError):
+            self.loyalty_card.write({'conversion_rate': 0})
+
+    def test_threshold(self):
+        with self.assertRaises(ValidationError):
+            self.loyalty_card.write({'threshold': -20})
+
+        with self.assertRaises(ValidationError):
+            self.loyalty_card.write({'threshold': 0})
+
+        with self.assertRaises(UserError):
+            self.loyalty_card.write({'threshold': 4.20})
+
+    def test_currency_discount(self):
+        with self.assertRaises(ValidationError):
+            self.loyalty_card.write({'currency_discount': -18.6})
+
+        with self.assertRaises(ValidationError):
+            self.loyalty_card.write({'currency_discount': 0})
+
+    def test_percentage_discount(self):
+        with self.assertRaises(ValidationError):
+            self.loyalty_card.write({'percentage_discount': -22})
+
+        with self.assertRaises(ValidationError):
+            self.loyalty_card.write({'percentage_discount': 0})
+
+    def test_max_discount_amount(self):
+        with self.assertRaises(ValidationError):
+            self.loyalty_card.write({'max_discount_amount': -3.6})
+
+        with self.assertRaises(ValidationError):
+            self.loyalty_card.write({'max_discount_amount': 0})
+
+    def test_unique_cards(self):
+        with self.assertRaises(ValidationError):
+            self.env['sale.loyalty.card'].create({
+                'name': 'Duplicate Card',
+                'points': 100,
+                'partner_id': self.loyalty_card.partner_id.id,
+                'company_id': self.loyalty_card.company_id.id,
+                'currency_id': self.loyalty_card.currency_id.id,
+            })
+
