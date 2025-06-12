@@ -30,6 +30,7 @@ from odoo.tools.mail import html_keep_url
 from odoo.addons.payment import utils as payment_utils
 from .sale_order_pricing import SaleOrderPricing
 from .sale_order_invoicing import SaleOrderInvoicing
+from .sale_order_communication import SaleOrderCommunication
 
 _logger = logging.getLogger(__name__)
 
@@ -966,106 +967,10 @@ class SaleOrder(models.Model):
         })
 
     def action_quotation_send(self):
-        """ Opens a wizard to compose an email, with relevant mail template loaded by default """
-        self.filtered(lambda so: so.state in ('draft', 'sent')).order_line._validate_analytic_distribution()
-        lang = self.env.context.get('lang')
-
-        ctx = {
-            'default_model': 'sale.order',
-            'default_res_ids': self.ids,
-            'default_composition_mode': 'comment',
-            'default_email_layout_xmlid': 'mail.mail_notification_layout_with_responsible_signature',
-            'email_notification_allow_footer': True,
-            'proforma': self.env.context.get('proforma', False),
-        }
-
-        if len(self) > 1:
-            ctx['default_composition_mode'] = 'mass_mail'
-        else:
-            ctx.update({
-                'force_email': True,
-                'model_description': self.with_context(lang=lang).type_name,
-            })
-            if not self.env.context.get('hide_default_template'):
-                mail_template = self._find_mail_template()
-                if mail_template:
-                    ctx.update({
-                        'default_template_id': mail_template.id,
-                        'mark_so_as_sent': True,
-                    })
-                if mail_template and mail_template.lang:
-                    lang = mail_template._render_lang(self.ids)[self.id]
-            else:
-                for order in self:
-                    order._portal_ensure_token()
-
-        action = {
-            'type': 'ir.actions.act_window',
-            'view_mode': 'form',
-            'res_model': 'mail.compose.message',
-            'views': [(False, 'form')],
-            'view_id': False,
-            'target': 'new',
-            'context': ctx,
-        }
-        if (
-            self.env.context.get('check_document_layout')
-            and not self.env.context.get('discard_logo_check')
-            and self.env.is_admin()
-            and not self.env.company.external_report_layout_id
-        ):
-            layout_action = self.env['ir.actions.report']._action_configure_external_report_layout(
-                action,
-            )
-            # Need to remove this context for windows action
-            action.pop('close_on_report_download', None)
-            layout_action['context']['dialog_size'] = 'extra-large'
-            return layout_action
-        return action
-
-    def _find_mail_template(self):
-        """ Get the appropriate mail template for the current sales order based on its state.
-
-        If the SO is confirmed, we return the mail template for the sale confirmation.
-        Otherwise, we return the quotation email template.
-
-        :return: The correct mail template based on the current status
-        :rtype: record of `mail.template` or `None` if not found
-        """
-        self.ensure_one()
-        if self.env.context.get('proforma') or self.state != 'sale':
-            return self.env.ref('sale.email_template_edi_sale', raise_if_not_found=False)
-        else:
-            return self._get_confirmation_template()
-
-    def _get_confirmation_template(self):
-        """ Get the mail template sent on SO confirmation (or for confirmed SO's).
-
-        :return: `mail.template` record or None if default template wasn't found
-        """
-        self.ensure_one()
-        default_confirmation_template_id = self.env['ir.config_parameter'].sudo().get_param(
-            'sale.default_confirmation_template'
-        )
-        default_confirmation_template = default_confirmation_template_id \
-            and self.env['mail.template'].browse(int(default_confirmation_template_id)).exists()
-        if default_confirmation_template:
-            return default_confirmation_template
-        else:
-            return self.env.ref('sale.mail_template_sale_confirmation', raise_if_not_found=False)
+        return SaleOrderCommunication(self).action_quotation_send()
 
     def action_quotation_sent(self):
-        """ Mark the given draft quotation(s) as sent.
-
-        :raise: UserError if any given SO is not in draft state.
-        """
-        if any(order.state != 'draft' for order in self):
-            raise UserError(_("Only draft orders can be marked as sent directly."))
-
-        for order in self:
-            order.message_subscribe(partner_ids=order.partner_id.ids)
-
-        self.write({'state': 'sent'})
+        SaleOrderCommunication(self).action_quotation_sent()
 
     def action_confirm(self):
         """ Confirm the given quotation(s) and set their confirmation date.
@@ -1153,7 +1058,7 @@ class SaleOrder(models.Model):
         :return: None
         """
         for order in self:
-            mail_template = order._get_confirmation_template()
+            mail_template = SaleOrderCommunication(order)._get_confirmation_template()
             order._send_order_notification_mail(mail_template)
 
     def _send_payment_succeeded_for_order_mail(self):
@@ -1435,71 +1340,22 @@ class SaleOrder(models.Model):
 
     def _track_finalize(self):
         """ Override of `mail` to prevent logging changes when the SO is in a draft state. """
-        if (len(self) == 1
-            # The method _track_finalize is sometimes called too early or too late and it
-            # might cause a desynchronization with the cache, thus this condition is needed.
-            and self.env.cache.contains(self, self._fields['state']) and self._discard_tracking()):
-            self.env.cr.precommit.data.pop(f'mail.tracking.{self._name}', {})
+        if SaleOrderCommunication(self).should_discard_tracking():
+            self.env.cr.precommit.data.pop(f'mail.tracking.{self.order._name}', {})
             self.env.flush_all()
             return
         return super()._track_finalize()
 
     @api.returns('mail.message', lambda value: value.id)
     def message_post(self, **kwargs):
-        if self.env.context.get('mark_so_as_sent'):
-            self.filtered(lambda o: o.state == 'draft').with_context(tracking_disable=True).write({'state': 'sent'})
-        so_ctx = {'mail_post_autofollow': self.env.context.get('mail_post_autofollow', True)}
-        if self.env.context.get('mark_so_as_sent') and 'mail_notify_author' not in kwargs:
-            kwargs['notify_author'] = self.env.user.partner_id.id in (kwargs.get('partner_ids') or [])
-        return super(SaleOrder, self.with_context(**so_ctx)).message_post(**kwargs)
+        ctx_updates, new_kwargs = SaleOrderCommunication(self).prepare_message_post_kwargs(kwargs)
+        return super(SaleOrder, self.with_context(**ctx_updates)).message_post(**new_kwargs)
 
     def _notify_get_recipients_groups(self, message, model_description, msg_vals=None):
-        """ Give access button to users and portal customer as portal is integrated
-        in sale. Customer and portal group have probably no right to see
-        the document so they don't have the access button. """
         groups = super()._notify_get_recipients_groups(
             message, model_description, msg_vals=msg_vals
         )
-        if not self:
-            return groups
-
-        self.ensure_one()
-        if self._context.get('proforma'):
-            for group in [g for g in groups if g[0] in ('portal_customer', 'portal', 'follower', 'customer')]:
-                group[2]['has_button_access'] = False
-            return groups
-        local_msg_vals = dict(msg_vals or {})
-
-        # portal customers have full access (existence not granted, depending on partner_id)
-        try:
-            customer_portal_group = next(group for group in groups if group[0] == 'portal_customer')
-        except StopIteration:
-            pass
-        else:
-            access_opt = customer_portal_group[2].setdefault('button_access', {})
-            is_tx_pending = self.get_portal_last_transaction().state == 'pending'
-            if self._has_to_be_signed():
-                if self._has_to_be_paid():
-                    access_opt['title'] = _("View Quotation") if is_tx_pending else _("Sign & Pay Quotation")
-                else:
-                    access_opt['title'] = _("Accept & Sign Quotation")
-            elif self._has_to_be_paid() and not is_tx_pending:
-                access_opt['title'] = _("Accept & Pay Quotation")
-            elif self.state in ('draft', 'sent'):
-                access_opt['title'] = _("View Quotation")
-
-        # enable followers that have access through portal
-        follower_group = next(group for group in groups if group[0] == 'follower')
-        follower_group[2]['active'] = True
-        follower_group[2]['has_button_access'] = True
-        access_opt = follower_group[2].setdefault('button_access', {})
-        if self.state in ('draft', 'sent'):
-            access_opt['title'] = _("View Quotation")
-        else:
-            access_opt['title'] = _("View Order")
-        access_opt['url'] = self._notify_get_action_link('view', **local_msg_vals)
-
-        return groups
+        return SaleOrderCommunication(self)._notify_get_recipients_groups(groups, msg_vals)
 
     def _notify_by_email_prepare_rendering_context(self, message, msg_vals=False, model_description=False,
                                                    force_email_company=False, force_email_lang=False):
@@ -1507,17 +1363,7 @@ class SaleOrder(models.Model):
             message, msg_vals, model_description=model_description,
             force_email_company=force_email_company, force_email_lang=force_email_lang
         )
-        lang_code = render_context.get('lang')
-        record = render_context['record']
-        subtitles = [f"{record.name} - {record.partner_id.name}" if record.partner_id else record.name]
-        if self.amount_total:
-            # Do not show the price in subtitles if zero (e.g. e-commerce orders are created empty)
-            subtitles.append(
-                format_amount(self.env, self.amount_total, self.currency_id, lang_code=lang_code),
-            )
-
-        render_context['subtitles'] = subtitles
-        return render_context
+        return SaleOrderCommunication(self)._notify_by_email_prepare_rendering_context(render_context)
 
     def _phone_get_number_fields(self):
         """ No phone or mobile field is available on sale model. Instead SMS will
@@ -1525,20 +1371,14 @@ class SaleOrder(models.Model):
         return []
 
     def _track_subtype(self, init_values):
-        self.ensure_one()
-        if 'state' in init_values and self.state == 'sale':
-            return self.env.ref('sale.mt_order_confirmed')
-        elif 'state' in init_values and self.state == 'sent':
-            return self.env.ref('sale.mt_order_sent')
+        subtype = SaleOrderCommunication(self).get_tracking_subtype(init_values)
+        if subtype:
+            return subtype
         return super()._track_subtype(init_values)
 
     def _message_get_suggested_recipients(self):
         recipients = super()._message_get_suggested_recipients()
-        if self.partner_id:
-            self._message_add_suggested_recipient(
-                recipients, partner=self.partner_id, reason=_("Customer")
-            )
-        return recipients
+        return SaleOrderCommunication(self)._message_get_suggested_recipients(recipients)
 
     # PAYMENT #
 
