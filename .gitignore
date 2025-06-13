@@ -49,3 +49,6 @@ package.json
 /man/
 /share/
 /src/
+sonar-project.properties
+UML-Extract-Class
+.gitignore
