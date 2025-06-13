@@ -4,6 +4,7 @@ from odoo.tests.common import TransactionCase
 from odoo.fields import Command
 from odoo.tests import tagged
 from unittest.mock import patch
+from parameterized import parameterized
 from odoo.exceptions import ValidationError, UserError
 import logging
 
@@ -62,30 +63,34 @@ class TestSaleOrderLoyalty(TestSaleCommonBase):
     # TODO add tests for checking if the points are awarded and subtracted to the card after payment
 
     """
-    Checks if the discounts get applied, for both currency and percentage discount types.
+    Parameterised test, checking if discounts are applied only when necessary, for both discount types.  
+    With variants determined by boundary value analysis.
     """
-    def test_discount(self):
-        self.order._compute_amounts()
-        self.assertAlmostEqual(self.order.loyalty_discount, 56, 2, "Loyalty discount should be applied.")
-        self.assertEqual(self.order.loyalty_points_used, self.loyalty_card.threshold,"Loyalty points used should match threshold.")
+    @parameterized.expand([
+        # (variant, points, discount_type, discount_applied, discount)
+        # percentage discounts
+        (0, 20, 'p', False, 0),  # out
+        (1, 99, 'p', False, 0),  # off
+        (2, 100, 'p', True, 56),  # on
+        (3, 420, 'p', True, 56),  # in
 
+        # currency discounts
+        (4, 20, 'c', False, 0),  # out
+        (5, 99, 'c', False, 0),  # off
+        (6, 100, 'c', True, 5),  # on
+        (7, 420, 'c', True, 5),  # in
+    ])
+    def test_discount(self, variant, points, discount_type, discount_applied, discount):
         self.loyalty_card.write({
-            'discount_type': 'c',
+            'discount_type': discount_type,
+            'points': points,
         })
         self.order._compute_amounts()
-        self.assertEqual(self.order.loyalty_discount, self.loyalty_card.currency_discount, "Loyalty discount should be applied.")
-        self.assertEqual(self.order.loyalty_points_used, self.loyalty_card.threshold, "Loyalty points used should match threshold.")
-
-    """
-    Don't provide discount in case of insufficient points total
-    """
-    def test_insufficient_points(self):
-        self.loyalty_card.write({
-            'points':20,
-        })
-        self.order._compute_amounts()
-        self.assertAlmostEqual(self.order.loyalty_discount, 0, 2, "Loyalty discount should be applied in case of insufficient points.")
-        self.assertEqual(self.order.loyalty_points_used, 0,"No Loyalty points should used in case of insufficient points.")
+        self.assertEqual(self.order.loyalty_discount, discount, "The loyalty discount doesn't match")
+        if discount_applied:
+            self.assertEqual(self.order.loyalty_points_used, self.loyalty_card.threshold, "Loyalty points used should match threshold.")
+        else:
+            self.assertEqual(self.order.loyalty_points_used, 0, "Loyalty points used should be zero, when no discount was applied.")
 
     """
     Validate loyalty points to be received with no discount applied
