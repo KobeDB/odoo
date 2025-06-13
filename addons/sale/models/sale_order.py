@@ -538,7 +538,10 @@ class SaleOrder(models.Model):
             if order.loyalty_discount <= 0: # should never be smaller than zero though
                 return
 
-            percentage = order.loyalty_discount/tax_totals['base_amount_currency']
+            percentage = 0
+            if order.amount_untaxed > 0:
+                percentage = order.loyalty_discount/order.amount_untaxed
+
             discounted_untaxed = tax_totals['base_amount_currency'] * (1 - percentage)
             discount_tax = tax_totals['tax_amount_currency'] * (1 - percentage)
 
@@ -559,6 +562,10 @@ class SaleOrder(models.Model):
     def _loyalty_discount(self):
         for order in self:
             order.loyalty_discount = 0.0
+            if order.amount_untaxed == 0:
+                self._loyalty_points()
+                continue
+
             card = self._get_card(order)
             if not card:
                 _logger.warning(f"Missing loyalty card for customer: {order.partner_id.name} for company: {order.company_id.name}")
