@@ -201,7 +201,7 @@ class TestSaleOrderLoyalty(TestSaleCommonBase):
 
     @parameterized.expand([
         # (conversion_rate),
-        (-20), (-0.1), (0),
+        (-20,), (-0.1,), (0,),
     ])
     def test_conversion_rate(self, conversion_rate):
         with self.assertRaises(ValidationError):
@@ -209,7 +209,7 @@ class TestSaleOrderLoyalty(TestSaleCommonBase):
 
     @parameterized.expand([
         # (threshold),
-        (-20), (0),
+        (-20,), (0,),
     ])
     def test_threshold(self, threshold):
         with self.assertRaises(ValidationError):
@@ -217,7 +217,7 @@ class TestSaleOrderLoyalty(TestSaleCommonBase):
 
     @parameterized.expand([
         # (currency_discount),
-        (-18.6), (0),
+        (-18.6,), (0,),
     ])
     def test_currency_discount(self, currency_discount):
         with self.assertRaises(ValidationError):
@@ -225,7 +225,7 @@ class TestSaleOrderLoyalty(TestSaleCommonBase):
 
     @parameterized.expand([
         # (percentage_discount),
-        (-22), (0), (69),
+        (-22,), (0,), (69,),
     ])
     def test_percentage_discount(self, percentage_discount):
         with self.assertRaises(ValidationError):
@@ -233,7 +233,7 @@ class TestSaleOrderLoyalty(TestSaleCommonBase):
 
     @parameterized.expand([
         #(max_discount_amount),
-        (-3.6),(0),
+        (-3.6,),(0,),
     ])
     def test_max_discount_amount(self, max_discount_amount):
         with self.assertRaises(ValidationError):
