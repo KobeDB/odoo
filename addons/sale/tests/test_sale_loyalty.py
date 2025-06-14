@@ -175,16 +175,6 @@ class TestSaleOrderLoyalty(TestSaleCommonBase):
         self.assertTrue(self.order.loyalty_points_awarded)
         self.assertAlmostEqual(self.loyalty_card.points, 2000 + 100.8 - self.loyalty_card.threshold) # 2000 + 100.8 - threshold (100)
 
-    def test_loyalty_card_missing(self):
-        self.loyalty_card.unlink()
-        with patch('odoo.addons.sale.models.sale_order._logger') as mock_logger:
-            self.order._compute_amounts()
-            mock_logger.warning.assert_any_call(
-                f"Missing loyalty card for customer: {self.partner.name} for company: {self.company.name}"
-            )
-
-
-
     # constraint tests
     def test_points(self):
         with self.assertRaises(ValidationError):

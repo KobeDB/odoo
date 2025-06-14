@@ -516,7 +516,7 @@ class SaleOrder(models.Model):
     """
     Calculates the total untaxed, tax and taxed prices
     """
-    @api.depends('currency_id', 'company_id', 'payment_term_id', 'state')
+    @api.depends('order_line.price_subtotal', 'currency_id', 'company_id', 'payment_term_id', 'state')
     def _compute_amounts(self):
         AccountTax = self.env['account.tax']
         for order in self:
@@ -570,7 +570,8 @@ class SaleOrder(models.Model):
 
             card = self._get_card(order)
             if not card:
-                _logger.warning(f"Missing loyalty card for customer: {order.partner_id.name} for company: {order.company_id.name}")
+                if LOYALTY_LOGGING:
+                    _logger.warning(f"Missing loyalty card for customer: {order.partner_id.name} for company: {order.company_id.name}")
                 continue
 
             if not card.discount():
