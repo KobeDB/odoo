@@ -76,3 +76,10 @@ class SaleOrderPayment:
             'amount_max': amount_max,
             'amount_paid': self.order.amount_paid,
         }
+    
+    def _compute_amount_paid(self):
+        """ Sum of the amount paid through all transactions for this SO. """
+        for order in self.order:
+            order.amount_paid = sum(
+                tx.amount for tx in order.transaction_ids if tx.state in ('authorized', 'done')
+            )

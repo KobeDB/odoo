@@ -36,6 +36,7 @@ from .sale_order_communication import SaleOrderCommunication
 from .sale_order_payment import SaleOrderPayment
 from .sale_order_edi import SaleOrderEDI
 from .sale_order_loyalty import SaleOrderLoyalty
+from .sale_order_portal import SaleOrderPortal
 
 _logger = logging.getLogger(__name__)
 LOYALTY_LOGGING = False
@@ -620,11 +621,7 @@ class SaleOrder(models.Model):
 
     @api.depends('transaction_ids')
     def _compute_amount_paid(self):
-        """ Sum of the amount paid through all transactions for this SO. """
-        for order in self:
-            order.amount_paid = sum(
-                tx.amount for tx in order.transaction_ids if tx.state in ('authorized', 'done')
-            )
+        SaleOrderPayment(self)._compute_amount_paid()
 
     def _compute_amount_undiscounted(self):
         for order in self:
@@ -1101,28 +1098,8 @@ class SaleOrder(models.Model):
             order._send_order_notification_mail(mail_template)
 
     def _send_order_notification_mail(self, mail_template):
-        """ Send a mail to the customer
-
-        Note: self.ensure_one()
-
-        :param mail.template mail_template: the template used to generate the mail
-        :return: None
-        """
-        self.ensure_one()
-
-        if not mail_template:
-            return
-
-        if self.env.su:
-            # sending mail in sudo was meant for it being sent from superuser
-            self = self.with_user(SUPERUSER_ID)
-
-        self.with_context(force_send=True).message_post_with_source(
-            mail_template,
-            email_layout_xmlid='mail.mail_notification_layout_with_responsible_signature',
-            subtype_xmlid='mail.mt_comment',
-        )
-
+        SaleOrderCommunication(self)._send_order_notification_mail(mail_template)
+        
     def action_lock(self):
         self.locked = True
 
@@ -1469,65 +1446,22 @@ class SaleOrder(models.Model):
     # PORTAL #
 
     def _has_to_be_signed(self):
-        """A sale order has to be signed when:
-        - its state is 'draft' or `sent`
-        - it's not expired;
-        - it requires a signature;
-        - it's not already signed.
-
-        Note: self.ensure_one()
-
-        :return: Whether the sale order has to be signed.
-        :rtype: bool
-        """
-        self.ensure_one()
-        return (
-            self.state in ['draft', 'sent']
-            and not self.is_expired
-            and self.require_signature
-            and not self.signature
-        )
+        return SaleOrderPortal(self)._has_to_be_signed()
 
     def _has_to_be_paid(self):
-        """A sale order has to be paid when:
-        - its state is 'draft' or `sent`;
-        - it's not expired;
-        - it requires a payment;
-        - the last transaction's state isn't `done`;
-        - the total amount is strictly positive.
-        - confirmation amount is not reached
-
-        Note: self.ensure_one()
-
-        :return: Whether the sale order has to be paid.
-        :rtype: bool
-        """
-        self.ensure_one()
-        return (
-            self.state in ['draft', 'sent']
-            and not self.is_expired
-            and self.require_payment
-            and self.amount_total > 0
-            and not self._is_confirmation_amount_reached()
-        )
-
+        return SaleOrderPortal(self)._has_to_be_paid()
+    
     def _get_portal_return_action(self):
-        """ Return the action used to display orders when returning from customer portal. """
-        self.ensure_one()
-        return self.env.ref('sale.action_quotations_with_onboarding')
+        return SaleOrderPortal(self)._get_portal_return_action
 
     def _get_name_portal_content_view(self):
-        """ This method can be inherited by localizations who want to localize the online quotation view. """
-        self.ensure_one()
-        return 'sale.sale_order_portal_content'
+       return SaleOrderPortal(self)._get_name_portal_content_view
 
     def _get_name_tax_totals_view(self):
-        """ This method can be inherited by localizations who want to localize the taxes displayed on the portal and sale order report. """
-        return 'sale.document_tax_totals'
+        return SaleOrderPortal(self)._get_name_tax_totals_view
 
     def _get_report_base_filename(self):
-        self.ensure_one()
-        return f'{self.type_name} {self.name}'
+        return SaleOrderPortal(self)._get_report_base_filename
 
     #=== CORE METHODS OVERRIDES ===#
 

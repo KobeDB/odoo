@@ -1,7 +1,7 @@
 from .constants import PaymentTransactionState, SaleOrderState
 from odoo.exceptions import UserError
 from odoo.tools import format_amount
-from odoo import _
+from odoo import _, SUPERUSER_ID
 
 class SaleOrderCommunication:
     def __init__(self, order):
@@ -197,3 +197,26 @@ class SaleOrderCommunication:
         return (len(self.order) == 1
             and self.env.cache.contains(self.order, self.order._fields['state']) 
             and self.order._discard_tracking())
+    
+    def _send_order_notification_mail(self, mail_template):
+        """ Send a mail to the customer
+
+        Note: self.ensure_one()
+
+        :param mail.template mail_template: the template used to generate the mail
+        :return: None
+        """
+        self.order.ensure_one()
+
+        if not mail_template:
+            return
+
+        if self.env.su:
+            # sending mail in sudo was meant for it being sent from superuser
+            self.order = self.order.with_user(SUPERUSER_ID)
+
+        self.order.with_context(force_send=True).message_post_with_source(
+            mail_template,
+            email_layout_xmlid='mail.mail_notification_layout_with_responsible_signature',
+            subtype_xmlid='mail.mt_comment',
+        )
