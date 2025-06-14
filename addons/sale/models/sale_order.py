@@ -526,6 +526,7 @@ class SaleOrder(models.Model):
 
             order._loyalty_discount()
 
+            order._loyalty_discount()
             if order.loyalty_discount <= 0: # should never be smaller than zero though
                 continue
 
@@ -564,6 +565,7 @@ class SaleOrder(models.Model):
             if not card:
                 if LOYALTY_LOGGING:
                     _logger.warning(f"Missing loyalty card for customer: {order.partner_id.name} for company: {order.company_id.name}")
+                    continue
 
             if not card.discount():
                 self._loyalty_points()
