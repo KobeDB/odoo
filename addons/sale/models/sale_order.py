@@ -33,6 +33,9 @@ from odoo.addons.payment import utils as payment_utils
 from .sale_order_pricing import SaleOrderPricing
 from .sale_order_invoicing import SaleOrderInvoicing
 from .sale_order_communication import SaleOrderCommunication
+from .sale_order_payment import SaleOrderPayment
+from .sale_order_edi import SaleOrderEDI
+from .sale_order_loyalty import SaleOrderLoyalty
 
 _logger = logging.getLogger(__name__)
 LOYALTY_LOGGING = False
@@ -524,83 +527,8 @@ class SaleOrder(models.Model):
             order.amount_tax = totals['amount_tax']
             order.amount_total = totals['amount_total']
 
-            order._loyalty_discount()
-
-            if order.loyalty_discount <= 0: # should never be smaller than zero though
-                continue
-
-            percentage = 0
-            if totals['amount_untaxed'] > 0:
-                percentage = order.loyalty_discount/totals['amount_untaxed']
-
-            discounted_untaxed = totals['amount_untaxed'] * (1 - percentage)
-            discount_tax = totals['amount_tax'] * (1 - percentage)
-
-            order.amount_untaxed = discounted_untaxed
-            order.amount_tax = discount_tax
-            order.amount_total = discounted_untaxed + discount_tax
-
-            if not LOYALTY_LOGGING:
-                continue
-            _logger.info(f"\n================================================================\n"
-                         f"Loyalty discount: {order.loyalty_discount} applied\n"
-                         f"Untaxed: {totals['amount_untaxed']} -> {order.amount_untaxed}\n"
-                         f"Tax: {totals['amount_tax']} -> {order.amount_tax}\n"
-                         f"Total: {totals['amount_total']} -> {order.amount_total}\n"
-                         f"================================================================\n"
-                         )
-
-
-    def _loyalty_discount(self):
-        for order in self:
-            order.loyalty_discount = 0.0
-            if order.amount_untaxed == 0:
-                self._loyalty_points()
-                continue
-
-            card = self._get_card(order)
-            if not card:
-                if LOYALTY_LOGGING:
-                    _logger.warning(f"Missing loyalty card for customer: {order.partner_id.name} for company: {order.company_id.name}")
-                continue
-
-            if not card.discount():
-                self._loyalty_points()
-                if LOYALTY_LOGGING:
-                    _logger.info(f"Customer: {order.partner_id.name} has insufficient points ({card.points}) on their loyalty card for company {order.company_id.name}")
-                continue
-
-            if card.discount_type == "p":
-                order.loyalty_discount = order.amount_untaxed * card.percentage_discount
-            elif card.discount_type == "c":
-                order.loyalty_discount = card.currency_discount
-            else:
-                _logger.error(f"An unsupported loyalty discount {card.discount_type} was used.")
-
-            if card.maxDiscount(order.loyalty_discount):
-                order.loyalty_discount = card.max_discount_amount
-
-            order.loyalty_points_used = card.threshold
-            # ensure discount never larger than actual price.
-            self._loyalty_points()
-
-    def _loyalty_points(self):
-        for order in self:
-            card = self._get_card(order)
-            if not card:
-                continue
-
-            price = order.amount_untaxed - order.loyalty_discount
-            order.loyalty_points = price * card.conversion_rate
-            if LOYALTY_LOGGING:
-                _logger.info(f"Customer: {order.partner_id.name} stands to gain {order.loyalty_points} points on their loyalty card for company {order.company_id.name}")
-
-    def _get_card(self, order):
-        card = self.env['sale.loyalty.card'].search([
-            ('partner_id', '=', order.partner_id.id),
-            ('company_id', '=', order.company_id.id)
-        ], limit=1)
-        return card
+            SaleOrderLoyalty(order)._loyalty_discount()
+            SaleOrderLoyalty(order)._apply_discount(totals)
 
     def _add_base_lines_for_early_payment_discount(self):
         """
@@ -1504,152 +1432,39 @@ class SaleOrder(models.Model):
         This is needed for the automatic invoice logic, as we want to automatically
         invoice the full SO when it's paid.
         """
-        for line in self.order_line:
-            if line.state == SaleOrderState.SALE:
-                # No need to set 0 as it is already the standard logic in the compute method.
-                line.qty_to_invoice = line.product_uom_qty - line.qty_invoiced
+        SaleOrderPayment(self)._force_lines_to_invoice_policy_order()
 
     def payment_action_capture(self):
         """ Capture all transactions linked to this sale order. """
-        self.ensure_one()
-        payment_utils.check_rights_on_recordset(self)
-
-        # In sudo mode to bypass the checks on the rights on the transactions.
-        return self.transaction_ids.sudo().action_capture()
+        return SaleOrderPayment(self).payment_action_capture()
 
     def payment_action_void(self):
         """ Void all transactions linked to this sale order. """
-        payment_utils.check_rights_on_recordset(self)
-
-        # In sudo mode to bypass the checks on the rights on the transactions.
-        self.authorized_transaction_ids.sudo().action_void()
+        return SaleOrderPayment(self).payment_action_void()
 
     def get_portal_last_transaction(self):
-        self.ensure_one()
-        return self.transaction_ids.sudo()._get_last()
+        return SaleOrderPayment(self).get_portal_last_transaction()
 
     def _get_order_lines_to_report(self):
-        down_payment_lines = self.order_line.filtered(lambda line:
-            line.is_downpayment
-            and not line.display_type
-            and not line._get_downpayment_state()
-        )
-
-        def show_line(line):
-            if not line.is_downpayment:
-                return True
-            elif line.display_type and down_payment_lines:
-                return True  # Only show the down payment section if down payments were posted
-            elif line in down_payment_lines:
-                return True  # Only show posted down payments
-            else:
-                return False
-
-        return self.order_line.filtered(show_line)
+        return SaleOrderPayment(self)._get_order_lines_to_report()
 
     def _get_default_payment_link_values(self):
-        self.ensure_one()
-        amount_max = self.amount_total - self.amount_paid
-
-        # Always default to the minimum value needed to confirm the order:
-        # - order is not confirmed yet
-        # - can be confirmed online
-        # - we have still not paid enough for confirmation.
-        prepayment_amount = self._get_prepayment_required_amount()
-        if (
-            self.state in ('draft', 'sent')
-            and self.require_payment
-            and self.currency_id.compare_amounts(prepayment_amount, self.amount_paid) > 0
-        ):
-            amount = prepayment_amount - self.amount_paid
-        else:
-            amount = amount_max
-
-        return {
-            'currency_id': self.currency_id.id,
-            'partner_id': self.partner_invoice_id.id,
-            'amount': amount,
-            'amount_max': amount_max,
-            'amount_paid': self.amount_paid,
-        }
+        return SaleOrderPayment(self)._get_default_payment_link_values()
 
     # EDI #
 
     def create_document_from_attachment(self, attachment_ids):
-        """ Create the sale orders from given attachment_ids and redirect newly create order view.
-
-        :param list attachment_ids: List of attachments process.
-        :return: An action redirecting to related sale order view.
-        :rtype: dict
-        """
-        orders = self._create_order_from_attachment(attachment_ids)
-        return orders._get_records_action(name=_("Generated Orders"))
+        return SaleOrderEDI(self).create_document_from_attachment(attachment_ids)
 
     @api.model
     def _create_order_from_attachment(self, attachment_ids):
-        """ Create the sale orders from given attachment_ids and fill data by extracting detail
-        from attachments and return generated orders.
-
-        :param list attachment_ids: List of attachments process.
-        :return: Recordset of order.
-        """
-        attachments = self.env['ir.attachment'].browse(attachment_ids)
-        if not attachments:
-            raise UserError(_("No attachment was provided"))
-
-        orders = self.browse()
-        for attachment in attachments:
-            order = self.create({
-                'partner_id': self.env.user.partner_id.id,
-            })
-            order._extend_with_attachments(attachment)
-            orders |= order
-            order.message_post(attachment_ids=attachment.ids)
-            attachment.write({'res_model': self._name, 'res_id': order.id})
-
-        return orders
+        return SaleOrderEDI(self)._create_order_from_attachment(attachment_ids)
 
     def _extend_with_attachments(self, attachment):
-        """ Main entry point to extend/enhance order with attachment.
-
-        :param attachment: A recordset of ir.attachment.
-        :returns: None
-        """
-        self.ensure_one()
-
-        file_data = attachment._unwrap_edi_attachments()[0]
-        decoder = self._get_order_edi_decoder(file_data)
-        if decoder:
-            try:
-                with self.env.cr.savepoint():
-                    decoder(self, file_data)
-            except RedirectWarning:
-                raise
-            except Exception:
-                message = _(
-                    "Error importing attachment '%(file_name)s' as order (decoder=%(decoder)s)",
-                    file_name=file_data['filename'],
-                    decoder=decoder.__name__,
-                )
-                self.with_user(SUPERUSER_ID).message_post(body=message)
-                _logger.exception(message)
-
-        if file_data.get('on_close'):
-            file_data['on_close']()
-        return True
+        return SaleOrderEDI(self)._extend_with_attachments(attachment)
 
     def _get_order_edi_decoder(self, file_data):
-        """ To be extended with decoding capabilities of order data from file data.
-
-        :returns:  Function to be later used to import the file.
-                   Function' args:
-                   - order: sale.order
-                   - file_data: attachemnt information / value
-                   returns True if was able to process the order
-        """
-        if file_data['type'] in ('pdf', 'binary'):
-            return lambda *args: False
-        return
+        return SaleOrderEDI(self)._get_order_edi_decoder(file_data)
 
     # PORTAL #
 
