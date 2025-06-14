@@ -158,6 +158,10 @@ class ProductTemplateInvoicePolicy(StrEnum):
     ORDER       = 'order'
     DELIVERY    = 'delivery'
 
+""" service_type in sale/product_template.py """
+class ProductTemplateServiceType(StrEnum):
+    MANUAL = 'manual'
+
 """  """
 class SaleOrderLineQtyDeliveredMethod(StrEnum):
     MANUAL      = 'manual'
@@ -176,3 +180,11 @@ class AccountJournalType(StrEnum):
     BANK        = 'bank'
     CREDIT      = 'credit'
     GENERAL     = 'general'
+
+""" sale_onboarding_payment_method in sale/res_company.py """
+class SaleOnboardingPaymentMethod(StrEnum):
+    DIGITAL_SIGNATURE   = 'digital_signature'
+    PAYPAL              = 'paypal'
+    STRIPE              = 'stripe'
+    OTHER               = 'other'
+    MANUAL              = 'manual'

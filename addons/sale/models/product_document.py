@@ -2,15 +2,16 @@
 
 from odoo import fields, models
 
+from .constants import *
 
 class ProductDocument(models.Model):
     _inherit = 'product.document'
 
     attached_on_sale = fields.Selection(
         selection=[
-            ('hidden', "Hidden"),
-            ('quotation', "On quote"),
-            ('sale_order', "On confirmed order"),
+            (str(AttachedOnSale.HIDDEN), "Hidden"),
+            (str(AttachedOnSale.QUOTATION), "On quote"),
+            (str(AttachedOnSale.SALE_ORDER), "On confirmed order"),
         ],
         required=True,
         default='hidden',

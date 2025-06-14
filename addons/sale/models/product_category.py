@@ -1,5 +1,6 @@
 from odoo import models, fields
 
+from .constants import *
 
 class ProductCategory(models.Model):
     _inherit = "product.category"
@@ -10,7 +11,7 @@ class ProductCategory(models.Model):
         string="Downpayment Account",
         domain=[
             ('deprecated', '=', False),
-            ('account_type', 'not in', ('asset_receivable', 'liability_payable', 'asset_cash', 'liability_credit_card', 'off_balance'))
+            ('account_type', 'not in', (str(AccountAccountType.ASSET_RECEIVABLE), str(AccountAccountType.LIABILITY_PAYABLE), str(AccountAccountType.ASSET_CASH), str(AccountAccountType.LIABILITY_CREDIT_CARD), str(AccountAccountType.OFF_BALANCE)))
         ],
         help="This account will be used on Downpayment invoices.",
         tracking=True,
