@@ -533,14 +533,16 @@ class SaleOrder(models.Model):
             order.amount_untaxed = tax_totals['base_amount_currency']
             order.amount_tax = tax_totals['tax_amount_currency']
             order.amount_total = tax_totals['total_amount_currency']
-            order._loyalty_discount()
 
+            order._loyalty_discount()
             if order.loyalty_discount <= 0: # should never be smaller than zero though
-                return
+                continue
+
+            _logger.warning(f"[DEBUG] {order.name}: applying loyalty logic with discount = {order.loyalty_discount}")
 
             percentage = 0
-            if order.amount_untaxed > 0:
-                percentage = order.loyalty_discount/order.amount_untaxed
+            if tax_totals['base_amount_currency'] > 0:
+                percentage = order.loyalty_discount/tax_totals['base_amount_currency']
 
             discounted_untaxed = tax_totals['base_amount_currency'] * (1 - percentage)
             discount_tax = tax_totals['tax_amount_currency'] * (1 - percentage)
@@ -550,7 +552,7 @@ class SaleOrder(models.Model):
             order.amount_total = discounted_untaxed + discount_tax
 
             if not LOYALTY_LOGGING:
-                return
+                continue
             _logger.info(f"\n================================================================\n"
                          f"Loyalty discount: {order.loyalty_discount} applied\n"
                          f"Untaxed: {tax_totals['base_amount_currency']} -> {order.amount_untaxed}\n"
@@ -569,13 +571,6 @@ class SaleOrder(models.Model):
             card = self._get_card(order)
             if not card:
                 _logger.warning(f"Missing loyalty card for customer: {order.partner_id.name} for company: {order.company_id.name}")
-                if not LOYALTY_LOGGING:
-                    continue
-                # AUTO creation of new card for existing customers only for 'testing' purposes # TODO remove
-                _logger.info(f"Created loyalty card for customer: {order.partner_id.name} for company: {order.company_id.name}")
-                order.company_id._create_loyalty_cards_for_customer(order.partner_id)
-                self._loyalty_points()
-                # wont have to apply discount yet since card just created
                 continue
 
             if not card.discount():

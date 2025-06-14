@@ -3,7 +3,9 @@
 from odoo import api, fields, models
 from odoo.addons.base.models.res_partner import WARNING_MESSAGE, WARNING_HELP
 from odoo.osv import expression
+import logging
 
+_logger = logging.getLogger(__name__)
 
 class ResPartner(models.Model):
     _inherit = 'res.partner'
@@ -102,10 +104,11 @@ class ResPartner(models.Model):
 
     @api.model_create_multi
     def create(self, vals):
-        partner = super().create(vals)
-        if partner.customer_rank > 0:
-            self.env['res.company'].search([]).sudo()._create_loyalty_cards_for_customer(partner)
-        return partner
+        partners = super().create(vals)
+        for partner in partners:
+            if partner.customer_rank > 0:
+                self.env['res.company'].search([]).sudo()._create_loyalty_cards_for_customer(partner)
+        return partners
 
     def unlink(self):
         # Unlink draft/cancelled SO so that the partner can be removed from database
