@@ -529,8 +529,6 @@ class SaleOrder(models.Model):
             if order.loyalty_discount <= 0: # should never be smaller than zero though
                 continue
 
-            _logger.warning(f"[DEBUG] {order.name}: applying loyalty logic with discount = {order.loyalty_discount}")
-
             percentage = 0
             if totals['amount_untaxed'] > 0:
                 percentage = order.loyalty_discount/totals['amount_untaxed']

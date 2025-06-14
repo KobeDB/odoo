@@ -92,7 +92,8 @@ class TestSaleOrderLoyalty(TestSaleCommonBase):
             self.assertEqual(self.order.loyalty_points_used, 0, "Loyalty points used should be zero, when no discount was applied.")
 
     """
-    
+    Parameterised test, checking if the number of loyalty points a customer should receive after a purchase is correct.
+    For both discount types and various cases, most importantly when the order's total price is zero.
     """
     @parameterized.expand([
         #(price, discount_type, percentage_discount, points_total, new_points_total)
@@ -128,15 +129,33 @@ class TestSaleOrderLoyalty(TestSaleCommonBase):
         self.assertAlmostEqual(points_total + self.order.loyalty_points - self.order.loyalty_points_used, new_points_total, 2, "Points should be equal to total points.")
 
     """
-    Validate maximum discount limit
+    Parameterised test, to validate correct application of the discount limit. With scuffy boundary value analysis.
     """
-    def test_max_discount(self):
+    @parameterized.expand([
+        #(max_discount_amount, discount_type, currency_discount, actual_discount),
+        # percentage discount
+        (100, 'p', 5, 56), # in
+        (56, 'p', 5, 56), # on
+        (55, 'p', 5, 55),  # off
+        (50, 'p', 5, 50),  # out
+
+        # currency discount
+        (100, 'c', 5, 5), # in
+        (100, 'c', 100, 100), # on
+        (50, 'c', 51, 50),  # off
+        (50, 'c', 100, 50),  # out
+
+    ])
+    def test_max_discount(self, max_discount_amount, discount_type, currency_discount, actual_discount):
         self.loyalty_card.write({
             'max_discount': True,
+            'max_discount_amount': max_discount_amount,
+            'discount_type': discount_type,
+            'currency_discount': currency_discount,
         })
         self.order._compute_amounts()
-        self.assertEqual(self.order.loyalty_discount, 50, "The discount shouldn't exceed the maximum discount allowed")
-        self.assertEqual(self.order.loyalty_points_used, self.loyalty_card.threshold,"Loyalty points used should match threshold.")
+        self.assertEqual(self.order.loyalty_discount, actual_discount, "The discount doesn't match the expected discount.")
+        self.assertEqual(self.order.loyalty_points_used, self.loyalty_card.threshold,"Loyalty points used should match threshold.") # discount is always applied
 
     """
     Verify points getting added to the card without any discount
@@ -180,43 +199,45 @@ class TestSaleOrderLoyalty(TestSaleCommonBase):
         with self.assertRaises(ValidationError):
             self.loyalty_card.write({'points': -20})
 
-    def test_conversion_rate(self):
+    @parameterized.expand([
+        # (conversion_rate),
+        (-20), (-0.1), (0),
+    ])
+    def test_conversion_rate(self, conversion_rate):
         with self.assertRaises(ValidationError):
-            self.loyalty_card.write({'conversion_rate': -0.1})
+            self.loyalty_card.write({'conversion_rate': conversion_rate})
 
+    @parameterized.expand([
+        # (threshold),
+        (-20), (0),
+    ])
+    def test_threshold(self, threshold):
         with self.assertRaises(ValidationError):
-            self.loyalty_card.write({'conversion_rate': 0})
+            self.loyalty_card.write({'threshold': threshold})
 
-    def test_threshold(self):
+    @parameterized.expand([
+        # (currency_discount),
+        (-18.6), (0),
+    ])
+    def test_currency_discount(self, currency_discount):
         with self.assertRaises(ValidationError):
-            self.loyalty_card.write({'threshold': -20})
+            self.loyalty_card.write({'currency_discount': currency_discount})
 
+    @parameterized.expand([
+        # (percentage_discount),
+        (-22), (0), (69),
+    ])
+    def test_percentage_discount(self, percentage_discount):
         with self.assertRaises(ValidationError):
-            self.loyalty_card.write({'threshold': 0})
+            self.loyalty_card.write({'percentage_discount': percentage_discount})
 
-    def test_currency_discount(self):
+    @parameterized.expand([
+        #(max_discount_amount),
+        (-3.6),(0),
+    ])
+    def test_max_discount_amount(self, max_discount_amount):
         with self.assertRaises(ValidationError):
-            self.loyalty_card.write({'currency_discount': -18.6})
-
-        with self.assertRaises(ValidationError):
-            self.loyalty_card.write({'currency_discount': 0})
-
-    def test_percentage_discount(self):
-        with self.assertRaises(ValidationError):
-            self.loyalty_card.write({'percentage_discount': -22})
-
-        with self.assertRaises(ValidationError):
-            self.loyalty_card.write({'percentage_discount': 0})
-
-        with self.assertRaises(ValidationError):
-            self.loyalty_card.write({'percentage_discount': 69})
-
-    def test_max_discount_amount(self):
-        with self.assertRaises(ValidationError):
-            self.loyalty_card.write({'max_discount_amount': -3.6})
-
-        with self.assertRaises(ValidationError):
-            self.loyalty_card.write({'max_discount_amount': 0})
+            self.loyalty_card.write({'max_discount_amount': max_discount_amount})
 
     def test_unique_cards(self):
         with self.assertRaises(ValidationError):
