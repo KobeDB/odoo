@@ -5,6 +5,8 @@ from odoo import api, fields, models, _
 from odoo.tools import groupby
 import logging
 
+from .constants import *
+
 _logger = logging.getLogger(__name__)
 LOYALTY_LOGGING = False
 
@@ -103,8 +105,8 @@ class AccountMove(models.Model):
         posted = super()._post(soft)
 
         for invoice in posted.filtered(lambda move: move.is_invoice()):
-            payments = invoice.mapped('transaction_ids.payment_id').filtered(lambda x: x.state == 'in_process')
-            move_lines = payments.move_id.line_ids.filtered(lambda line: line.account_type in ('asset_receivable', 'liability_payable') and not line.reconciled)
+            payments = invoice.mapped('transaction_ids.payment_id').filtered(lambda x: x.state == AccountPaymentState.IN_PROCESS)
+            move_lines = payments.move_id.line_ids.filtered(lambda line: line.account_type in (str(AccountAccountType.ASSET_RECEIVABLE), str(AccountAccountType.LIABILITY_PAYABLE)) and not line.reconciled)
             for line in move_lines:
                 invoice.js_assign_outstanding_line(line.id)
         return posted
@@ -212,7 +214,7 @@ class AccountMove(models.Model):
     @api.depends('payment_state')
     def _compute_loyalty_points(self):
         for move in self:
-            if move.move_type != 'out_invoice' or move.payment_state != 'paid':
+            if move.move_type != AccountMoveType.OUT_INVOICE or move.payment_state != AccountMovePaymentState.PAID:
                 continue
 
             order = self.env['sale.order'].search([

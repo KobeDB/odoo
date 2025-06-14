@@ -83,3 +83,57 @@ class AttachedOnSale(StrEnum):
     HIDDEN     = 'hidden'
     QUOTATION  = 'quotation'
     SALE_ORDER = 'sale_order'
+
+""" state in account/account_payment.py """
+class AccountPaymentState(StrEnum):
+    DRAFT = 'draft'
+    IN_PROCESS = 'in_process'
+    PAID = 'paid'
+    CANCELED = 'canceled'
+    REJECTED = 'rejected'
+
+""" account_type in account/account """
+class AccountAccountType(StrEnum):
+    ASSET_RECEIVABLE = 'asset_receivable'
+    ASSET_CASH = 'asset_cash'
+    ASSET_CURRENT = 'asset_current'
+    ASSET_NON_CURRENT = 'asset_non_current'
+    ASSET_PREPAYMENTS = 'asset_prepayments'
+    ASSET_FIXED = 'asset_fixed'
+
+    LIABILITY_PAYABLE = 'liability_payable'
+    LIABILITY_CREDIT_CARD = 'liability_credit_card'
+    LIABILITY_CURRENT = 'liability_current'
+    LIABILITY_NON_CURRENT = 'liability_non_current'
+
+    EQUITY = 'equity'
+    EQUITY_UNAFFECTED = 'equity_unaffected'
+
+    INCOME = 'income'
+    INCOME_OTHER = 'income_other'
+
+    EXPENSE = 'expense'
+    EXPENSE_DEPRECIATION = 'expense_depreciation'
+    EXPENSE_DIRECT_COST = 'expense_direct_cost'
+
+    OFF_BALANCE = 'off_balance'
+
+""" payment_state in account/account_move.py """
+class AccountMovePaymentState(StrEnum):
+    NOT_PAID = 'not_paid'
+    IN_PAYMENT = 'in_payment'
+    PAID = 'paid'
+    PARTIAL = 'partial'
+    REVERSED = 'reversed'
+    BLOCKED = 'blocked'
+    INVOICING_LEGACY = 'invoicing_legacy'
+
+""" move_type in account/account_move.py """
+class AccountMoveType(StrEnum):
+    ENTRY = 'entry'
+    OUT_INVOICE = 'out_invoice'
+    OUT_REFUND = 'out_refund'
+    IN_INVOICE = 'in_invoice'
+    IN_REFUND = 'in_refund'
+    OUT_RECEIPT = 'out_receipt'
+    IN_RECEIPT = 'in_receipt'
