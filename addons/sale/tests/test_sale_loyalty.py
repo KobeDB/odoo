@@ -94,26 +94,28 @@ class TestSaleOrderLoyalty(TestSaleCommonBase):
     """
     Parameterised test, checking if the number of loyalty points a customer should receive after a purchase is correct.
     For both discount types and various cases, most importantly when the order's total price is zero.
+    
+    Points Balance: the the sum of the loyalty points gained vs spent, if it is negative then there were more spent than gained
     """
     @parameterized.expand([
-        #(price, discount_type, percentage_discount, points_total, new_points_total)
+        #(price, discount_type, percentage_discount, points_on_card, points_balance)
         # no points
-        (0, 'p', 0.1, 20, 20),
-        (0, 'c', 0.1, 20, 20),
-        (0, 'p', 0.1, 2000, 2000), # eligible for discount but it shouldn't be applied
-        (0, 'c', 0.1, 2000, 2000), # eligible for discount but it shouldn't be applied
-        (2.5, 'p', 1, 20, 21),
-        (2.5, 'c', 1, 20, 21),
-        (2.5, 'p', 1, 2000, 1900),
-        (2.5, 'c', 1, 2000, 1900),
+        (0, 'p', 0.1, 20, 0),
+        (0, 'c', 0.1, 20, 0),
+        (0, 'p', 0.1, 2000, 0), # eligible for discount but it shouldn't be applied
+        (0, 'c', 0.1, 2000, 0), # eligible for discount but it shouldn't be applied
+        (2.5, 'p', 1, 20, 1),
+        (2.5, 'c', 1, 20, 1),
+        (2.5, 'p', 1, 2000, -100),
+        (2.5, 'c', 1, 2000, -100),
 
         # points
-        (-1, 'p', 0.1, 20, 132),
-        (-1, 'c', 0.1, 20, 132),
-        (-1, 'p', 0.1, 2000, 1900+100.8),
-        (-1, 'c', 0.1, 2000, 1900+111),
+        (-1, 'p', 0.1, 20, 112),
+        (-1, 'c', 0.1, 20, 112),
+        (-1, 'p', 0.1, 2000, 0.8),
+        (-1, 'c', 0.1, 2000, 11),
     ])
-    def test_loyalty_points_calculation(self, price, discount_type, percentage_discount, points_total, new_points_total):
+    def test_loyalty_points_calculation(self, price, discount_type, percentage_discount, points_on_card, points_balance):
         if price != -1 and price >= 0:
             self.order.order_line[0].write({
                 'price_unit': price,
@@ -122,11 +124,11 @@ class TestSaleOrderLoyalty(TestSaleCommonBase):
         self.loyalty_card.write({
             'discount_type': discount_type,
             'percentage_discount': percentage_discount,
-            'points': points_total,
+            'points': points_on_card,
         })
 
         self.order._compute_amounts()
-        self.assertAlmostEqual(points_total + self.order.loyalty_points - self.order.loyalty_points_used, new_points_total, 2, "Points should be equal to total points.")
+        self.assertAlmostEqual(self.order.loyalty_points - self.order.loyalty_points_used, points_balance, 2, "The sum of the points gained and used isn't correct.")
 
     """
     Parameterised test, to validate correct application of the discount limit. With scuffy boundary value analysis.
@@ -158,11 +160,26 @@ class TestSaleOrderLoyalty(TestSaleCommonBase):
         self.assertEqual(self.order.loyalty_points_used, self.loyalty_card.threshold,"Loyalty points used should match threshold.") # discount is always applied
 
     """
-    Verify points getting added to the card without any discount
+    Parameterised test, to validate correct addition and removal of points to the loyalty card.
+    Used boundary value analysis to cover the different discount cases.
     """
-    def test_points_addition_to_card(self):
+    @parameterized.expand([
+        #(discount_type, points_total, new_points_total),
+        ('p', 20, 132), # out
+        ('p', 99, 211), # off
+        ('p', 100, 100.8), # on
+        ('p', 2000, 2000.8), # in
+
+        ('c', 20, 132),  # out
+        ('c', 99, 211),  # off
+        ('c', 100, 111),  # on
+        ('c', 2000, 2011),  # in
+
+    ])
+    def test_loyalty_card_arithmatic(self, discount_type, points_total, new_points_total):
         self.loyalty_card.write({
-            'points': 20,
+            'points': points_total,
+            'discount_type': discount_type,
         })
         self.order._compute_amounts()
         self.order.action_confirm()
@@ -172,27 +189,10 @@ class TestSaleOrderLoyalty(TestSaleCommonBase):
 
         invoice.write({'payment_state': 'paid'})  # triggers _compute_loyalty_points via @depends
 
-        # self.card.invalidate_cache()  # make sure we see latest DB values
         self.assertTrue(invoice.loyalty_points_applied)
         self.assertTrue(self.order.loyalty_points_awarded)
-        self.assertAlmostEqual(self.loyalty_card.points, 20 + 112)
+        self.assertAlmostEqual(self.loyalty_card.points, new_points_total)
 
-    """
-    Verify points getting added and removed to the card with a discount
-    """
-    def test_points_addition_to_card_with_discount(self):
-        self.order._compute_amounts()
-        self.order.action_confirm()
-
-        invoice = self.order._create_invoices()
-        invoice.action_post()
-
-        invoice.write({'payment_state': 'paid'})  # triggers _compute_loyalty_points via @depends
-
-        # self.card.invalidate_cache()  # make sure we see latest DB values
-        self.assertTrue(invoice.loyalty_points_applied)
-        self.assertTrue(self.order.loyalty_points_awarded)
-        self.assertAlmostEqual(self.loyalty_card.points, 2000 + 100.8 - self.loyalty_card.threshold) # 2000 + 100.8 - threshold (100)
 
     # constraint tests
     def test_points(self):
