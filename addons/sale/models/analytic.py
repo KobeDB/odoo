@@ -3,11 +3,12 @@
 
 from odoo import fields, models
 
+from .constants import *
 
 class AccountAnalyticLine(models.Model):
     _inherit = "account.analytic.line"
 
-    so_line = fields.Many2one('sale.order.line', string='Sales Order Item', domain=[('qty_delivered_method', '=', 'analytic')], index='btree_not_null')
+    so_line = fields.Many2one('sale.order.line', string='Sales Order Item', domain=[('qty_delivered_method', '=', str(SaleOrderLineQtyDeliveredMethod.ANALYTIC))], index='btree_not_null')
 
 
 class AccountAnalyticApplicability(models.Model):

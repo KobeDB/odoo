@@ -4,6 +4,7 @@ from odoo import fields, models, _
 from odoo.exceptions import UserError
 from odoo.tools import float_compare, float_is_zero
 
+from .constants import *
 
 class AccountMoveLine(models.Model):
     _inherit = 'account.move.line'
@@ -53,7 +54,7 @@ class AccountMoveLine(models.Model):
         if self.sale_line_ids:
             return False
         uom_precision_digits = self.env['decimal.precision'].precision_get('Product Unit of Measure')
-        return float_compare(self.credit or 0.0, self.debit or 0.0, precision_digits=uom_precision_digits) != 1 and self.product_id.expense_policy not in [False, 'no']
+        return float_compare(self.credit or 0.0, self.debit or 0.0, precision_digits=uom_precision_digits) != 1 and self.product_id.expense_policy not in [False, str(ProductTemplateExpensePolicy.NO)]
 
     def _sale_create_reinvoice_sale_line(self):
 
@@ -75,12 +76,12 @@ class AccountMoveLine(models.Model):
                 continue
 
             # raise if the sale order is not currently open
-            if sale_order.state in ('draft', 'sent'):
+            if sale_order.state in (str(SaleOrderState.DRAFT), str(SaleOrderState.SENT)):
                 raise UserError(_(
                     "The Sales Order %(order)s to be reinvoiced must be validated before registering expenses.",
                     order=sale_order.name,
                 ))
-            elif sale_order.state == 'cancel':
+            elif sale_order.state == SaleOrderState.CANCEL:
                 raise UserError(_(
                     "The Sales Order %(order)s to be reinvoiced is cancelled."
                     " You cannot register an expense on a cancelled Sales Order.",
@@ -98,8 +99,8 @@ class AccountMoveLine(models.Model):
             # find the existing sale.line or keep its creation values to process this in batch
             sale_line = None
             if (
-                move_line.product_id.expense_policy == 'sales_price'
-                and move_line.product_id.invoice_policy == 'delivery'
+                move_line.product_id.expense_policy == ProductTemplateExpensePolicy.SALES_PRICE
+                and move_line.product_id.invoice_policy == ProductTemplateInvoicePolicy.DELIVERY
                 and not self.env.context.get('force_split_lines')
             ):
                 # for those case only, we can try to reuse one
@@ -179,7 +180,7 @@ class AccountMoveLine(models.Model):
         unit_amount = self.quantity
         amount = (self.credit or 0.0) - (self.debit or 0.0)
 
-        if self.product_id.expense_policy == 'sales_price':
+        if self.product_id.expense_policy == ProductTemplateExpensePolicy.SALES_PRICE:
             return order.pricelist_id._get_product_price(
                 self.product_id,
                 1.0,

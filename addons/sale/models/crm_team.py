@@ -5,6 +5,7 @@ from odoo import api, fields, models, _
 from odoo.exceptions import UserError
 from odoo.tools import SQL
 
+from .constants import *
 
 class CrmTeam(models.Model):
     _inherit = 'crm.team'
@@ -32,7 +33,7 @@ class CrmTeam(models.Model):
     def _compute_quotations_to_invoice(self):
         query = self.env['sale.order']._where_calc([
             ('team_id', 'in', self.ids),
-            ('state', 'in', ['draft', 'sent']),
+            ('state', 'in', [str(SaleOrderState.DRAFT), str(SaleOrderState.SENT)]),
         ])
         self.env['sale.order']._apply_ir_rules(query, 'read')
         select_sql = SQL("""
@@ -61,7 +62,7 @@ class CrmTeam(models.Model):
     def _compute_sales_to_invoice(self):
         sale_order_data = self.env['sale.order']._read_group([
             ('team_id', 'in', self.ids),
-            ('invoice_status','=','to invoice'),
+            ('invoice_status','=', str(InvoiceStatus.TO_INVOICE)),
         ], ['team_id'], ['__count'])
         data_map = {team.id: count for team, count in sale_order_data}
         for team in self:
@@ -94,7 +95,7 @@ class CrmTeam(models.Model):
     def _compute_sale_order_count(self):
         sale_order_data = self.env['sale.order']._read_group([
             ('team_id', 'in', self.ids),
-            ('state', '!=', 'cancel'),
+            ('state', '!=', str(SaleOrderState.CANCEL)),
         ], ['team_id'], ['__count'])
         data_map = {team.id: count for team, count in sale_order_data}
         for team in self:

@@ -6,6 +6,8 @@ from dateutil import relativedelta
 from odoo import _, api, Command, fields, models, SUPERUSER_ID
 from odoo.tools import str2bool
 
+from .constants import *
+
 
 class PaymentTransaction(models.Model):
     _inherit = 'payment.transaction'
@@ -16,16 +18,16 @@ class PaymentTransaction(models.Model):
 
     def _compute_sale_order_reference(self, order):
         self.ensure_one()
-        if self.provider_id.so_reference_type == 'so_name':
+        if self.provider_id.so_reference_type == PaymentProviderSoReferenceType.SO_NAME:
             order_reference = order.name
-        elif self.provider_id.so_reference_type == 'partner':
+        elif self.provider_id.so_reference_type == PaymentProviderSoReferenceType.PARTNER:
             identification_number = order.partner_id.id
             order_reference = '%s/%s' % ('CUST', str(identification_number % 97).rjust(2, '0'))
         else:
             # self.provider_id.so_reference_type is empty
             order_reference = False
 
-        invoice_journal = self.env['account.journal'].search([('type', '=', 'sale'), ('company_id', '=', self.env.company.id)], limit=1)
+        invoice_journal = self.env['account.journal'].search([('type', '=', AccountJournalType.SALE), ('company_id', '=', self.env.company.id)], limit=1)
         if invoice_journal:
             order_reference = invoice_journal._process_reference_for_sale_order(order_reference)
 
@@ -43,20 +45,20 @@ class PaymentTransaction(models.Model):
         transactions, we confirm the quotation; for confirmed transactions, we automatically confirm
         the quotation and generate invoices.
         """
-        for pending_tx in self.filtered(lambda tx: tx.state == 'pending'):
+        for pending_tx in self.filtered(lambda tx: tx.state == PaymentTransactionState.PENDING):
             super(PaymentTransaction, pending_tx)._post_process()
             sales_orders = pending_tx.sale_order_ids.filtered(
-                lambda so: so.state in ['draft', 'sent']
+                lambda so: so.state in [SaleOrderState.DRAFT, SaleOrderState.SENT]
             )
             sales_orders.filtered(
-                lambda so: so.state == 'draft'
+                lambda so: so.state == SaleOrderState.DRAFT
             ).with_context(tracking_disable=True).action_quotation_sent()
 
             if pending_tx.provider_id.code == 'custom':
                 for order in pending_tx.sale_order_ids:
                     order.reference = pending_tx._compute_sale_order_reference(order)
 
-            if pending_tx.operation == 'validation':
+            if pending_tx.operation == PaymentTransactionOperation.VALIDATION:
                 continue
             # Send the payment status email.
             # The transactions are manually cached while in a sudoed environment to prevent an
@@ -70,21 +72,21 @@ class PaymentTransaction(models.Model):
             sales_orders.mapped('transaction_ids')
             sales_orders._send_payment_succeeded_for_order_mail()
 
-        for authorized_tx in self.filtered(lambda tx: tx.state == 'authorized'):
+        for authorized_tx in self.filtered(lambda tx: tx.state == PaymentTransactionState.AUTHORIZED):
             super(PaymentTransaction, authorized_tx)._post_process()
             confirmed_orders = authorized_tx._check_amount_and_confirm_order()
-            if authorized_tx.operation == 'validation':
+            if authorized_tx.operation == PaymentTransactionOperation.VALIDATION:
                 continue
             if remaining_orders := (authorized_tx.sale_order_ids - confirmed_orders):
                 remaining_orders._send_payment_succeeded_for_order_mail()
 
         super(PaymentTransaction, self.filtered(
-            lambda tx: tx.state not in ['pending', 'authorized', 'done'])
+            lambda tx: tx.state not in [str(PaymentTransactionState.PENDING), str(PaymentTransactionState.AUTHORIZED), str(PaymentTransactionState.DONE)])
         )._post_process()
 
-        for done_tx in self.filtered(lambda tx: tx.state == 'done'):
+        for done_tx in self.filtered(lambda tx: tx.state == PaymentTransactionState.DONE):
             confirmed_orders = done_tx._check_amount_and_confirm_order()
-            if done_tx.operation == 'validation':
+            if done_tx.operation == PaymentTransactionOperation.VALIDATION:
                 continue
             (done_tx.sale_order_ids - confirmed_orders)._send_payment_succeeded_for_order_mail()
 
@@ -120,7 +122,7 @@ class PaymentTransaction(models.Model):
         for tx in self:
             # We only support the flow where exactly one quotation is linked to a transaction.
             if len(tx.sale_order_ids) == 1:
-                quotation = tx.sale_order_ids.filtered(lambda so: so.state in ('draft', 'sent'))
+                quotation = tx.sale_order_ids.filtered(lambda so: so.state in (str(SaleOrderState.DRAFT), str(SaleOrderState.SENT)))
                 if quotation and quotation._is_confirmation_amount_reached():
                     quotation.with_context(send_email=True).action_confirm()
                     confirmed_orders |= quotation
@@ -145,7 +147,7 @@ class PaymentTransaction(models.Model):
                 company_id=tx.company_id.id,
             )
             invoice_to_send = tx.invoice_ids.filtered(
-                lambda i: not i.is_move_sent and i.state == 'posted' and i._is_ready_to_be_sent()
+                lambda i: not i.is_move_sent and i.state == AccountMoveState.POSTED and i._is_ready_to_be_sent()
             )
             invoice_to_send.is_move_sent = True # Mark invoice as sent
             self.env['account.move.send'].with_user(SUPERUSER_ID)._generate_and_send_invoices(
@@ -179,7 +181,7 @@ class PaymentTransaction(models.Model):
         for tx in self.filtered(lambda tx: tx.sale_order_ids):
             tx = tx.with_company(tx.company_id)
 
-            confirmed_orders = tx.sale_order_ids.filtered(lambda so: so.state == 'sale')
+            confirmed_orders = tx.sale_order_ids.filtered(lambda so: so.state == SaleOrderState.SALE)
             if confirmed_orders:
                 # Filter orders between those fully paid and those partially paid.
                 fully_paid_orders = confirmed_orders.filtered(lambda so: so._is_paid())

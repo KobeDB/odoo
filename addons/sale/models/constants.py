@@ -39,6 +39,15 @@ class PaymentTransactionState(StrEnum):
     CANCEL     = 'cancel'
     ERROR      = 'error'
 
+""" operation in sale/payment_transaction.py """
+class PaymentTransactionOperation(StrEnum):
+    ONLINE_REDIRECT = 'online_redirect'
+    ONLINE_DIRECT   = 'online_direct'
+    ONLINE_TOKEN    = 'online_token'
+    VALIDATION      = 'validation'
+    OFFLINE         = 'offline'
+    REFUND          = 'refund'
+
 """ WARNING_MESSAGE in base/res_partner.py """
 class WarningMessage(StrEnum):
     NO_MESSAGE = 'no-message'
@@ -86,54 +95,84 @@ class AttachedOnSale(StrEnum):
 
 """ state in account/account_payment.py """
 class AccountPaymentState(StrEnum):
-    DRAFT = 'draft'
-    IN_PROCESS = 'in_process'
-    PAID = 'paid'
-    CANCELED = 'canceled'
-    REJECTED = 'rejected'
+    DRAFT       = 'draft'
+    IN_PROCESS  = 'in_process'
+    PAID        = 'paid'
+    CANCELED    = 'canceled'
+    REJECTED    = 'rejected'
 
 """ account_type in account/account """
 class AccountAccountType(StrEnum):
-    ASSET_RECEIVABLE = 'asset_receivable'
-    ASSET_CASH = 'asset_cash'
-    ASSET_CURRENT = 'asset_current'
-    ASSET_NON_CURRENT = 'asset_non_current'
-    ASSET_PREPAYMENTS = 'asset_prepayments'
-    ASSET_FIXED = 'asset_fixed'
+    ASSET_RECEIVABLE    = 'asset_receivable'
+    ASSET_CASH          = 'asset_cash'
+    ASSET_CURRENT       = 'asset_current'
+    ASSET_NON_CURRENT   = 'asset_non_current'
+    ASSET_PREPAYMENTS   = 'asset_prepayments'
+    ASSET_FIXED         = 'asset_fixed'
 
-    LIABILITY_PAYABLE = 'liability_payable'
+    LIABILITY_PAYABLE     = 'liability_payable'
     LIABILITY_CREDIT_CARD = 'liability_credit_card'
-    LIABILITY_CURRENT = 'liability_current'
+    LIABILITY_CURRENT     = 'liability_current'
     LIABILITY_NON_CURRENT = 'liability_non_current'
 
-    EQUITY = 'equity'
-    EQUITY_UNAFFECTED = 'equity_unaffected'
+    EQUITY              = 'equity'
+    EQUITY_UNAFFECTED   = 'equity_unaffected'
 
-    INCOME = 'income'
-    INCOME_OTHER = 'income_other'
+    INCOME          = 'income'
+    INCOME_OTHER    = 'income_other'
 
-    EXPENSE = 'expense'
-    EXPENSE_DEPRECIATION = 'expense_depreciation'
-    EXPENSE_DIRECT_COST = 'expense_direct_cost'
+    EXPENSE                 = 'expense'
+    EXPENSE_DEPRECIATION    = 'expense_depreciation'
+    EXPENSE_DIRECT_COST     = 'expense_direct_cost'
 
     OFF_BALANCE = 'off_balance'
 
 """ payment_state in account/account_move.py """
 class AccountMovePaymentState(StrEnum):
-    NOT_PAID = 'not_paid'
-    IN_PAYMENT = 'in_payment'
-    PAID = 'paid'
-    PARTIAL = 'partial'
-    REVERSED = 'reversed'
-    BLOCKED = 'blocked'
-    INVOICING_LEGACY = 'invoicing_legacy'
+    NOT_PAID            = 'not_paid'
+    IN_PAYMENT          = 'in_payment'
+    PAID                = 'paid'
+    PARTIAL             = 'partial'
+    REVERSED            = 'reversed'
+    BLOCKED             = 'blocked'
+    INVOICING_LEGACY    = 'invoicing_legacy'
 
 """ move_type in account/account_move.py """
 class AccountMoveType(StrEnum):
-    ENTRY = 'entry'
+    ENTRY       = 'entry'
     OUT_INVOICE = 'out_invoice'
-    OUT_REFUND = 'out_refund'
-    IN_INVOICE = 'in_invoice'
-    IN_REFUND = 'in_refund'
+    OUT_REFUND  = 'out_refund'
+    IN_INVOICE  = 'in_invoice'
+    IN_REFUND   = 'in_refund'
     OUT_RECEIPT = 'out_receipt'
-    IN_RECEIPT = 'in_receipt'
+    IN_RECEIPT  = 'in_receipt'
+
+""" expense_policy in sale/product_template.py """
+class ProductTemplateExpensePolicy(StrEnum):
+    NO          = 'no'
+    COST        = 'cost'
+    SALES_PRICE = 'sales_price'
+
+""" invoice_policy in sale/product_template.py """
+class ProductTemplateInvoicePolicy(StrEnum):
+    ORDER       = 'order'
+    DELIVERY    = 'delivery'
+
+"""  """
+class SaleOrderLineQtyDeliveredMethod(StrEnum):
+    MANUAL      = 'manual'
+    ANALYTIC    = 'analytic'
+
+""" so_reference_type in sale/payment_provider.py """
+class PaymentProviderSoReferenceType(StrEnum):
+    SO_NAME = 'so_name'
+    PARTNER = 'partner'
+
+""" type in account/account_journal.py """
+class AccountJournalType(StrEnum):
+    SALE        = 'sale'
+    PURCHASE    = 'purchase'
+    CASH        = 'cash'
+    BANK        = 'bank'
+    CREDIT      = 'credit'
+    GENERAL     = 'general'
