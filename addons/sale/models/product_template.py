@@ -8,13 +8,14 @@ from odoo.tools import float_round, format_list
 
 from odoo.addons.base.models.res_partner import WARNING_HELP, WARNING_MESSAGE
 
+from .constants import *
 
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
     _check_company_auto = True
 
     service_type = fields.Selection(
-        selection=[('manual', "Manually set quantities on order")],
+        selection=[(str(ProductTemplateServiceType.MANUAL), "Manually set quantities on order")],
         string="Track Service",
         compute='_compute_service_type', store=True, readonly=False, precompute=True,
         help="Manually set quantities on order: Invoice based on the manually entered quantity, without creating an analytic account.\n"
@@ -26,9 +27,9 @@ class ProductTemplate(models.Model):
     sale_line_warn_msg = fields.Text(string="Message for Sales Order Line")
     expense_policy = fields.Selection(
         selection=[
-            ('no', "No"),
-            ('cost', "At cost"),
-            ('sales_price', "Sales price"),
+            (str(ProductTemplateExpensePolicy.NO), "No"),
+            (str(ProductTemplateExpensePolicy.COST), "At cost"),
+            (str(ProductTemplateExpensePolicy.SALES_PRICE), "Sales price"),
         ],
         string="Re-Invoice Costs", default='no',
         compute='_compute_expense_policy', store=True, readonly=False,
@@ -39,8 +40,8 @@ class ProductTemplate(models.Model):
         string="Sold", compute='_compute_sales_count', digits='Product Unit of Measure')
     invoice_policy = fields.Selection(
         selection=[
-            ('order', "Ordered quantities"),
-            ('delivery', "Delivered quantities"),
+            (str(ProductTemplateInvoicePolicy.ORDER), "Ordered quantities"),
+            (str(ProductTemplateInvoicePolicy.DELIVERY), "Delivered quantities"),
         ],
         string="Invoicing Policy",
         compute='_compute_invoice_policy',
@@ -81,12 +82,12 @@ class ProductTemplate(models.Model):
         return tooltip
 
     def _prepare_invoicing_tooltip(self):
-        if self.invoice_policy == 'delivery':
+        if self.invoice_policy == ProductTemplateInvoicePolicy.DELIVERY:
             return _("Invoice after delivery, based on quantities delivered, not ordered.")
-        elif self.invoice_policy == 'order':
-            if self.type == 'consu':
+        elif self.invoice_policy == ProductTemplateInvoicePolicy.ORDER:
+            if self.type == ProductType.CONSU:
                 return _("You can invoice goods before they are delivered.")
-            elif self.type == 'service':
+            elif self.type == ProductType.SERVICE:
                 return _("Invoice ordered quantities as soon as this service is sold.")
         return ""
 
@@ -106,7 +107,7 @@ class ProductTemplate(models.Model):
 
     @api.depends('sale_ok')
     def _compute_expense_policy(self):
-        self.filtered(lambda t: not t.sale_ok).expense_policy = 'no'
+        self.filtered(lambda t: not t.sale_ok).expense_policy = str(ProductTemplateExpensePolicy.NO)
 
     @api.depends('product_variant_ids.sales_count')
     def _compute_sales_count(self):
@@ -164,12 +165,11 @@ class ProductTemplate(models.Model):
 
     @api.depends('type')
     def _compute_service_type(self):
-        self.filtered(lambda t: t.type == 'consu' or not t.service_type).service_type = 'manual'
+        self.filtered(lambda t: t.type == ProductType.CONSU or not t.service_type).service_type = str(ProductTemplateServiceType.MANUAL)
 
     @api.depends('type')
     def _compute_invoice_policy(self):
-        self.filtered(lambda t: t.type == 'consu' or not t.invoice_policy).invoice_policy = 'order'
-
+        self.filtered(lambda t: t.type == ProductType.CONSU or not t.invoice_policy).invoice_policy = str(ProductTemplateInvoicePolicy.ORDER)
     def _get_backend_root_menu_ids(self):
         return super()._get_backend_root_menu_ids() + [self.env.ref('sale.sale_menu_root').id]
 
@@ -225,7 +225,7 @@ class ProductTemplate(models.Model):
                     break
             res.update({
                 'has_optional_products': has_optional_products,
-                'is_combo': self.type == 'combo',
+                'is_combo': self.type == ProductType.COMBO,
             })
         if self.sale_line_warn != 'no-message':
             res['sale_warning'] = {

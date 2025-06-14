@@ -1,8 +1,8 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
-
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
 
+from .constants import *
 
 class ResCompany(models.Model):
     _inherit = 'res.company'
@@ -41,11 +41,11 @@ class ResCompany(models.Model):
     # sale onboarding
     sale_onboarding_payment_method = fields.Selection(
         selection=[
-            ('digital_signature', "Sign online"),
-            ('paypal', "PayPal"),
-            ('stripe', "Stripe"),
-            ('other', "Pay with another payment provider"),
-            ('manual', "Manual Payment"),
+            (str(SaleOnboardingPaymentMethod.DIGITAL_SIGNATURE), "Sign online"),
+            (str(SaleOnboardingPaymentMethod.PAYPAL), "PayPal"),
+            (str(SaleOnboardingPaymentMethod.STRIPE), "Stripe"),
+            (str(SaleOnboardingPaymentMethod.OTHER), "Pay with another payment provider"),
+            (str(SaleOnboardingPaymentMethod.MANUAL), "Manual Payment"),
         ],
         string="Sale onboarding selected payment method")
 
