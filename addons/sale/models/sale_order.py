@@ -30,6 +30,9 @@ from odoo.tools import (
 from odoo.tools.mail import html_keep_url
 
 from odoo.addons.payment import utils as payment_utils
+from .sale_order_pricing import SaleOrderPricing
+from .sale_order_invoicing import SaleOrderInvoicing
+from .sale_order_communication import SaleOrderCommunication
 
 _logger = logging.getLogger(__name__)
 LOYALTY_LOGGING = False
@@ -461,17 +464,13 @@ class SaleOrder(models.Model):
     @api.depends('pricelist_id', 'company_id')
     def _compute_currency_id(self):
         for order in self:
-            order.currency_id = order.pricelist_id.currency_id or order.company_id.currency_id
+            order.currency_id = SaleOrderPricing(order).get_currency_id()
 
     @api.depends('currency_id', 'date_order', 'company_id')
     def _compute_currency_rate(self):
         for order in self:
-            order.currency_rate = self.env['res.currency']._get_conversion_rate(
-                from_currency=order.company_id.currency_id,
-                to_currency=order.currency_id,
-                company=order.company_id,
-                date=(order.date_order or fields.Datetime.now()).date(),
-            )
+            pricing = SaleOrderPricing(order)
+            order.currency_rate = pricing.get_currency_rate()
 
     @api.depends('company_id')
     def _compute_has_active_pricelist(self):
@@ -516,60 +515,55 @@ class SaleOrder(models.Model):
     """
     Calculates the total untaxed, tax and taxed prices
     """
-    @api.depends('currency_id', 'company_id', 'payment_term_id', 'state')
+    @api.depends('order_line.price_subtotal', 'currency_id', 'company_id', 'payment_term_id', 'state')
     def _compute_amounts(self):
-        AccountTax = self.env['account.tax']
         for order in self:
-            order_lines = order.order_line.filtered(lambda x: not x.display_type)
-            base_lines = [line._prepare_base_line_for_taxes_computation() for line in order_lines]
-            base_lines += order._add_base_lines_for_early_payment_discount()
-            AccountTax._add_tax_details_in_base_lines(base_lines, order.company_id)
-            AccountTax._round_base_lines_tax_details(base_lines, order.company_id)
-            tax_totals = AccountTax._get_tax_totals_summary(
-                base_lines=base_lines,
-                currency=order.currency_id or order.company_id.currency_id,
-                company=order.company_id,
-            )
-            order.amount_untaxed = tax_totals['base_amount_currency']
-            order.amount_tax = tax_totals['tax_amount_currency']
-            order.amount_total = tax_totals['total_amount_currency']
+            pricing = SaleOrderPricing(order)
+            totals = pricing.compute_totals()
+            order.amount_untaxed = totals['amount_untaxed']
+            order.amount_tax = totals['amount_tax']
+            order.amount_total = totals['amount_total']
+
             order._loyalty_discount()
 
             if order.loyalty_discount <= 0: # should never be smaller than zero though
-                return
+                continue
 
-            percentage = order.loyalty_discount/tax_totals['base_amount_currency']
-            discounted_untaxed = tax_totals['base_amount_currency'] * (1 - percentage)
-            discount_tax = tax_totals['tax_amount_currency'] * (1 - percentage)
+            _logger.warning(f"[DEBUG] {order.name}: applying loyalty logic with discount = {order.loyalty_discount}")
+
+            percentage = 0
+            if totals['amount_untaxed'] > 0:
+                percentage = order.loyalty_discount/totals['amount_untaxed']
+
+            discounted_untaxed = totals['amount_untaxed'] * (1 - percentage)
+            discount_tax = totals['amount_tax'] * (1 - percentage)
 
             order.amount_untaxed = discounted_untaxed
             order.amount_tax = discount_tax
             order.amount_total = discounted_untaxed + discount_tax
 
             if not LOYALTY_LOGGING:
-                return
+                continue
             _logger.info(f"\n================================================================\n"
                          f"Loyalty discount: {order.loyalty_discount} applied\n"
-                         f"Untaxed: {tax_totals['base_amount_currency']} -> {order.amount_untaxed}\n"
-                         f"Tax: {tax_totals['tax_amount_currency']} -> {order.amount_tax}\n"
-                         f"Total: {tax_totals['total_amount_currency']} -> {order.amount_total}\n"
+                         f"Untaxed: {totals['amount_untaxed']} -> {order.amount_untaxed}\n"
+                         f"Tax: {totals['amount_tax']} -> {order.amount_tax}\n"
+                         f"Total: {totals['amount_total']} -> {order.amount_total}\n"
                          f"================================================================\n"
                          )
+
 
     def _loyalty_discount(self):
         for order in self:
             order.loyalty_discount = 0.0
+            if order.amount_untaxed == 0:
+                self._loyalty_points()
+                continue
+
             card = self._get_card(order)
             if not card:
-                _logger.warning(f"Missing loyalty card for customer: {order.partner_id.name} for company: {order.company_id.name}")
-                if not LOYALTY_LOGGING:
-                    continue
-                # AUTO creation of new card for existing customers only for 'testing' purposes # TODO remove
-                _logger.info(f"Created loyalty card for customer: {order.partner_id.name} for company: {order.company_id.name}")
-                order.company_id._create_loyalty_cards_for_customer(order.partner_id)
-                self._loyalty_points()
-                # wont have to apply discount yet since card just created
-                continue
+                if LOYALTY_LOGGING:
+                    _logger.warning(f"Missing loyalty card for customer: {order.partner_id.name} for company: {order.company_id.name}")
 
             if not card.discount():
                 self._loyalty_points()
@@ -609,8 +603,6 @@ class SaleOrder(models.Model):
         ], limit=1)
         return card
 
-    # adapted/new methods ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
     def _add_base_lines_for_early_payment_discount(self):
         """
         When applying a payment term with an early payment discount, and when said payment term computes the tax on the
@@ -618,35 +610,8 @@ class SaleOrder(models.Model):
         Creates the necessary line for this behavior to be displayed.
         :returns: array containing the necessary lines or empty array if the payment term isn't epd mixed
         """
-        self.ensure_one()
-        epd_lines = []
-        if (
-            self.payment_term_id.early_discount
-            and self.payment_term_id.early_pay_discount_computation == EarlyPayDiscountComputation.MIXED
-            and self.payment_term_id.discount_percentage
-        ):
-            percentage = self.payment_term_id.discount_percentage
-            currency = self.currency_id or self.company_id.currency_id
-            for line in self.order_line.filtered(lambda x: not x.display_type):
-                line_amount_after_discount = (line.price_subtotal / 100) * percentage
-                epd_lines.append(self.env['account.tax']._prepare_base_line_for_taxes_computation(
-                    record=self,
-                    price_unit=-line_amount_after_discount,
-                    quantity=1.0,
-                    currency_id=currency,
-                    sign=1,
-                    special_type='early_payment',
-                    tax_ids=line.tax_id,
-                ))
-                epd_lines.append(self.env['account.tax']._prepare_base_line_for_taxes_computation(
-                    record=self,
-                    price_unit=line_amount_after_discount,
-                    quantity=1.0,
-                    currency_id=currency,
-                    sign=1,
-                    special_type='early_payment',
-                ))
-        return epd_lines
+        pricing = SaleOrderPricing(self)
+        return pricing.compute_early_payment_discount()
 
     @api.depends('order_line.invoice_lines')
     def _get_invoiced(self):
@@ -719,29 +684,7 @@ class SaleOrder(models.Model):
         ]
         for order in confirmed_orders:
             line_invoice_status = [d[1] for d in line_invoice_status_all if d[0] == order.id]
-            if order.state != SaleOrderState.SALE:
-                order.invoice_status = InvoiceStatus.NO
-            elif any(invoice_status == InvoiceStatus.TO_INVOICE for invoice_status in line_invoice_status):
-                if any(invoice_status == InvoiceStatus.NO for invoice_status in line_invoice_status):
-                    # If only discount/delivery/promotion lines can be invoiced, the SO should not
-                    # be invoiceable.
-                    invoiceable_domain = lines_domain + [('invoice_status', '=', 'to invoice')]
-                    invoiceable_lines = order.order_line.filtered_domain(invoiceable_domain)
-                    special_lines = invoiceable_lines.filtered(
-                        lambda sol: not sol._can_be_invoiced_alone()
-                    )
-                    if invoiceable_lines == special_lines:
-                        order.invoice_status = str(InvoiceStatus.NO)
-                    else:
-                        order.invoice_status = str(InvoiceStatus.TO_INVOICE)
-                else:
-                    order.invoice_status = str(InvoiceStatus.TO_INVOICE)
-            elif line_invoice_status and all(invoice_status == InvoiceStatus.INVOICED for invoice_status in line_invoice_status):
-                order.invoice_status = str(InvoiceStatus.INVOICED)
-            elif line_invoice_status and all(invoice_status in (str(InvoiceStatus.INVOICED), str(InvoiceStatus.UPSELLING)) for invoice_status in line_invoice_status):
-                order.invoice_status = str(InvoiceStatus.UPSELLING)
-            else:
-                order.invoice_status = str(InvoiceStatus.NO)
+            order.invoice_status = SaleOrderInvoicing(order).compute_invoice_status(line_invoice_status, lines_domain)
 
     @api.depends('transaction_ids')
     def _compute_authorized_transaction_ids(self):
@@ -758,10 +701,8 @@ class SaleOrder(models.Model):
 
     def _compute_amount_undiscounted(self):
         for order in self:
-            total = 0.0
-            for line in order.order_line:
-                total += (line.price_subtotal * 100)/(100-line.discount) if line.discount != 100 else (line.price_unit * line.product_uom_qty)
-            order.amount_undiscounted = total
+            pricing = SaleOrderPricing(order)
+            order.amount_undiscounted = pricing.compute_amount_undiscounted()
 
     @api.depends('client_order_ref', 'date_order', 'origin', 'partner_id')
     def _compute_duplicated_order_ids(self):
@@ -880,18 +821,9 @@ class SaleOrder(models.Model):
     @api.depends_context('lang')
     @api.depends('order_line.price_subtotal', 'currency_id', 'company_id', 'payment_term_id')
     def _compute_tax_totals(self):
-        AccountTax = self.env['account.tax']
         for order in self:
-            order_lines = order.order_line.filtered(lambda x: not x.display_type)
-            base_lines = [line._prepare_base_line_for_taxes_computation() for line in order_lines]
-            base_lines += order._add_base_lines_for_early_payment_discount()
-            AccountTax._add_tax_details_in_base_lines(base_lines, order.company_id)
-            AccountTax._round_base_lines_tax_details(base_lines, order.company_id)
-            order.tax_totals = AccountTax._get_tax_totals_summary(
-                base_lines=base_lines,
-                currency=order.currency_id or order.company_id.currency_id,
-                company=order.company_id,
-            )
+            pricing = SaleOrderPricing(order)
+            order.tax_totals = pricing.compute_tax_totals()
 
     @api.depends('state')
     def _compute_type_name(self):
@@ -1136,106 +1068,10 @@ class SaleOrder(models.Model):
         })
 
     def action_quotation_send(self):
-        """ Opens a wizard to compose an email, with relevant mail template loaded by default """
-        self.filtered(lambda so: so.state in ('draft', 'sent')).order_line._validate_analytic_distribution()
-        lang = self.env.context.get('lang')
-
-        ctx = {
-            'default_model': 'sale.order',
-            'default_res_ids': self.ids,
-            'default_composition_mode': 'comment',
-            'default_email_layout_xmlid': 'mail.mail_notification_layout_with_responsible_signature',
-            'email_notification_allow_footer': True,
-            'proforma': self.env.context.get('proforma', False),
-        }
-
-        if len(self) > 1:
-            ctx['default_composition_mode'] = 'mass_mail'
-        else:
-            ctx.update({
-                'force_email': True,
-                'model_description': self.with_context(lang=lang).type_name,
-            })
-            if not self.env.context.get('hide_default_template'):
-                mail_template = self._find_mail_template()
-                if mail_template:
-                    ctx.update({
-                        'default_template_id': mail_template.id,
-                        'mark_so_as_sent': True,
-                    })
-                if mail_template and mail_template.lang:
-                    lang = mail_template._render_lang(self.ids)[self.id]
-            else:
-                for order in self:
-                    order._portal_ensure_token()
-
-        action = {
-            'type': 'ir.actions.act_window',
-            'view_mode': 'form',
-            'res_model': 'mail.compose.message',
-            'views': [(False, 'form')],
-            'view_id': False,
-            'target': 'new',
-            'context': ctx,
-        }
-        if (
-            self.env.context.get('check_document_layout')
-            and not self.env.context.get('discard_logo_check')
-            and self.env.is_admin()
-            and not self.env.company.external_report_layout_id
-        ):
-            layout_action = self.env['ir.actions.report']._action_configure_external_report_layout(
-                action,
-            )
-            # Need to remove this context for windows action
-            action.pop('close_on_report_download', None)
-            layout_action['context']['dialog_size'] = 'extra-large'
-            return layout_action
-        return action
-
-    def _find_mail_template(self):
-        """ Get the appropriate mail template for the current sales order based on its state.
-
-        If the SO is confirmed, we return the mail template for the sale confirmation.
-        Otherwise, we return the quotation email template.
-
-        :return: The correct mail template based on the current status
-        :rtype: record of `mail.template` or `None` if not found
-        """
-        self.ensure_one()
-        if self.env.context.get('proforma') or self.state != 'sale':
-            return self.env.ref('sale.email_template_edi_sale', raise_if_not_found=False)
-        else:
-            return self._get_confirmation_template()
-
-    def _get_confirmation_template(self):
-        """ Get the mail template sent on SO confirmation (or for confirmed SO's).
-
-        :return: `mail.template` record or None if default template wasn't found
-        """
-        self.ensure_one()
-        default_confirmation_template_id = self.env['ir.config_parameter'].sudo().get_param(
-            'sale.default_confirmation_template'
-        )
-        default_confirmation_template = default_confirmation_template_id \
-            and self.env['mail.template'].browse(int(default_confirmation_template_id)).exists()
-        if default_confirmation_template:
-            return default_confirmation_template
-        else:
-            return self.env.ref('sale.mail_template_sale_confirmation', raise_if_not_found=False)
+        return SaleOrderCommunication(self).action_quotation_send()
 
     def action_quotation_sent(self):
-        """ Mark the given draft quotation(s) as sent.
-
-        :raise: UserError if any given SO is not in draft state.
-        """
-        if any(order.state != 'draft' for order in self):
-            raise UserError(_("Only draft orders can be marked as sent directly."))
-
-        for order in self:
-            order.message_subscribe(partner_ids=order.partner_id.ids)
-
-        self.write({'state': 'sent'})
+        SaleOrderCommunication(self).action_quotation_sent()
 
     def action_confirm(self):
         """ Confirm the given quotation(s) and set their confirmation date.
@@ -1323,7 +1159,7 @@ class SaleOrder(models.Model):
         :return: None
         """
         for order in self:
-            mail_template = order._get_confirmation_template()
+            mail_template = SaleOrderCommunication(order)._get_confirmation_template()
             order._send_order_notification_mail(mail_template)
 
     def _send_payment_succeeded_for_order_mail(self):
@@ -1438,9 +1274,7 @@ class SaleOrder(models.Model):
             )
 
     def _recompute_taxes(self):
-        lines_to_recompute = self.order_line.filtered(lambda line: not line.display_type)
-        lines_to_recompute._compute_tax_id()
-        self.show_update_fpos = False
+        SaleOrderPricing(self).recompute_taxes()
 
     def action_update_prices(self):
         self.ensure_one()
@@ -1455,15 +1289,7 @@ class SaleOrder(models.Model):
         self.message_post(body=message)
 
     def _recompute_prices(self):
-        lines_to_recompute = self._get_update_prices_lines()
-        lines_to_recompute.invalidate_recordset(['pricelist_item_id'])
-        lines_to_recompute.with_context(force_price_recomputation=True)._compute_price_unit()
-        # Special case: we want to overwrite the existing discount on _recompute_prices call
-        # i.e. to make sure the discount is correctly reset
-        # if pricelist rule is different than when the price was first computed.
-        lines_to_recompute.discount = 0.0
-        lines_to_recompute._compute_discount()
-        self.show_update_pricelist = False
+        SaleOrderPricing(self).recompute_prices()
 
     def _default_order_line_values(self, child_field=False):
         default_data = super()._default_order_line_values(child_field)
@@ -1498,39 +1324,7 @@ class SaleOrder(models.Model):
         overridden to implement custom invoice generation (making sure to call super() to establish
         a clean extension chain).
         """
-        self.ensure_one()
-
-        txs_to_be_linked = self.transaction_ids.sudo().filtered(
-            lambda tx: (
-                tx.state in ('pending', 'authorized')
-                or tx.state == PaymentTransactionState.DONE and not (tx.payment_id and tx.payment_id.is_reconciled)
-            )
-        )
-
-        values = {
-            'ref': self.client_order_ref or '',
-            'move_type': 'out_invoice',
-            'narration': self.note,
-            'currency_id': self.currency_id.id,
-            'campaign_id': self.campaign_id.id,
-            'medium_id': self.medium_id.id,
-            'source_id': self.source_id.id,
-            'team_id': self.team_id.id,
-            'partner_id': self.partner_invoice_id.id,
-            'partner_shipping_id': self.partner_shipping_id.id,
-            'fiscal_position_id': (self.fiscal_position_id or self.fiscal_position_id._get_fiscal_position(self.partner_invoice_id)).id,
-            'invoice_origin': self.name,
-            'invoice_payment_term_id': self.payment_term_id.id,
-            'invoice_user_id': self.user_id.id,
-            'payment_reference': self.reference,
-            'transaction_ids': [Command.set(txs_to_be_linked.ids)],
-            'company_id': self.company_id.id,
-            'invoice_line_ids': [],
-            'user_id': self.user_id.id,
-        }
-        if self.journal_id:
-            values['journal_id'] = self.journal_id.id
-        return values
+        return SaleOrderInvoicing(self).prepare_invoice_dict()
 
     def action_view_invoice(self, invoices=False):
         if not invoices:
@@ -1561,50 +1355,13 @@ class SaleOrder(models.Model):
         action['context'] = context
         return action
 
-    def _get_invoice_grouping_keys(self):
-        return ['company_id', 'partner_id', 'currency_id']
-
-    def _nothing_to_invoice_error_message(self):
-        return _(
-            "Cannot create an invoice. No items are available to invoice.\n\n"
-            "To resolve this issue, please ensure that:\n"
-            "   \u2022 The products have been delivered before attempting to invoice them.\n"
-            "   \u2022 The invoicing policy of the product is configured correctly.\n\n"
-            "If you want to invoice based on ordered quantities instead:\n"
-            "   \u2022 For consumable or storable products, open the product, go to the 'General Information' tab and change the 'Invoicing Policy' from 'Delivered Quantities' to 'Ordered Quantities'.\n"
-            "   \u2022 For services (and other products), change the 'Invoicing Policy' to 'Prepaid/Fixed Price'.\n"
-        )
-
     def _get_update_prices_lines(self):
         """ Hook to exclude specific lines which should not be updated based on price list recomputation """
         return self.order_line.filtered(lambda line: not line.display_type)
 
     def _get_invoiceable_lines(self, final=False):
         """Return the invoiceable lines for order `self`."""
-        down_payment_line_ids = []
-        invoiceable_line_ids = []
-        pending_section = None
-        precision = self.env['decimal.precision'].precision_get('Product Unit of Measure')
-
-        for line in self.order_line:
-            if line.display_type == OrderLineDisplayType.LINE_SECTION:
-                # Only invoice the section if one of its lines is invoiceable
-                pending_section = line
-                continue
-            if line.display_type != OrderLineDisplayType.LINE_NOTE and float_is_zero(line.qty_to_invoice, precision_digits=precision):
-                continue
-            if line.qty_to_invoice > 0 or (line.qty_to_invoice < 0 and final) or line.display_type == OrderLineDisplayType.LINE_NOTE:
-                if line.is_downpayment:
-                    # Keep down payment lines separately, to put them together
-                    # at the end of the invoice, in a specific dedicated section.
-                    down_payment_line_ids.append(line.id)
-                    continue
-                if pending_section:
-                    invoiceable_line_ids.append(pending_section.id)
-                    pending_section = None
-                invoiceable_line_ids.append(line.id)
-
-        return self.env['sale.order.line'].browse(invoiceable_line_ids + down_payment_line_ids)
+        return SaleOrderInvoicing(self)._get_invoiceable_lines(final)
 
     def _create_account_invoices(self, invoice_vals_list, final):
         """Small method to allow overriding the behavior right after an invoice is created."""
@@ -1633,72 +1390,17 @@ class SaleOrder(models.Model):
         invoice_vals_list = []
         invoice_item_sequence = 0 # Incremental sequencing to keep the lines order on the invoice.
         for order in self:
-            if order.partner_invoice_id.lang:
-                order = order.with_context(lang=order.partner_invoice_id.lang)
-            order = order.with_company(order.company_id)
-
-            invoice_vals = order._prepare_invoice()
-            invoiceable_lines = order._get_invoiceable_lines(final)
-
-            if not any(not line.display_type for line in invoiceable_lines):
-                continue
-
-            invoice_line_vals = []
-            down_payment_section_added = False
-            for line in invoiceable_lines:
-                if not down_payment_section_added and line.is_downpayment:
-                    # Create a dedicated section for the down payments
-                    # (put at the end of the invoiceable_lines)
-                    invoice_line_vals.append(
-                        Command.create(
-                            order._prepare_down_payment_section_line(sequence=invoice_item_sequence)
-                        ),
-                    )
-                    down_payment_section_added = True
-                    invoice_item_sequence += 1
-                invoice_line_vals.append(
-                    Command.create(
-                        line._prepare_invoice_line(sequence=invoice_item_sequence)
-                    ),
-                )
-                invoice_item_sequence += 1
-
-            invoice_vals['invoice_line_ids'] += invoice_line_vals
-            invoice_vals_list.append(invoice_vals)
+            invoice_vals, invoice_item_sequence = SaleOrderInvoicing(order).create_invoices(
+    final=final, invoice_item_sequence=invoice_item_sequence)  
+            if invoice_vals:
+                invoice_vals_list.append(invoice_vals)
 
         if not invoice_vals_list and self._context.get('raise_if_nothing_to_invoice', True):
-            raise UserError(self._nothing_to_invoice_error_message())
+            raise UserError(SaleOrderInvoicing._nothing_to_invoice_error_message())
 
         # 2) Manage 'grouped' parameter: group by (partner_id, currency_id).
         if not grouped:
-            new_invoice_vals_list = []
-            invoice_grouping_keys = self._get_invoice_grouping_keys()
-            invoice_vals_list = sorted(
-                invoice_vals_list,
-                key=lambda x: [
-                    x.get(grouping_key) for grouping_key in invoice_grouping_keys
-                ]
-            )
-            for _grouping_keys, invoices in groupby(invoice_vals_list, key=lambda x: [x.get(grouping_key) for grouping_key in invoice_grouping_keys]):
-                origins = set()
-                payment_refs = set()
-                refs = set()
-                ref_invoice_vals = None
-                for invoice_vals in invoices:
-                    if not ref_invoice_vals:
-                        ref_invoice_vals = invoice_vals
-                    else:
-                        ref_invoice_vals['invoice_line_ids'] += invoice_vals['invoice_line_ids']
-                    origins.add(invoice_vals['invoice_origin'])
-                    payment_refs.add(invoice_vals['payment_reference'])
-                    refs.add(invoice_vals['ref'])
-                ref_invoice_vals.update({
-                    'ref': ', '.join(refs)[:2000],
-                    'invoice_origin': ', '.join(origins),
-                    'payment_reference': len(payment_refs) == 1 and payment_refs.pop() or False,
-                })
-                new_invoice_vals_list.append(ref_invoice_vals)
-            invoice_vals_list = new_invoice_vals_list
+            invoice_vals_list = SaleOrderInvoicing(self)._group_invoice_vals(invoice_vals_list)
 
         # 3) Create invoices.
 
@@ -1728,7 +1430,7 @@ class SaleOrder(models.Model):
                     line[2]['sequence'] = SaleOrderLine._get_invoice_line_sequence(new=sequence, old=line[2]['sequence'])
                     sequence += 1
 
-        moves = self._create_account_invoices(invoice_vals_list, final)
+        moves = SaleOrderInvoicing(self)._create_account_invoices(invoice_vals_list, final)
 
         # 4) Some moves might actually be refunds: convert them if the total amount is negative
         # We do this after the moves have been created since we need taxes, etc. to know if the total
@@ -1738,66 +1440,7 @@ class SaleOrder(models.Model):
                 moves_to_switch.action_switch_move_type()
                 self.invoice_ids._set_reversed_entry(moves_to_switch)
 
-        for move in moves:
-            if final:
-                # Downpayment might have been determined by a fixed amount set by the user.
-                # This amount is tax included. This can lead to rounding issues.
-                # E.g. a user wants a 100€ DP on a product with 21% tax.
-                # 100 / 1.21 = 82.64, 82.64 * 1,21 = 99.99
-                # This is already corrected by adding/removing the missing cents on the DP invoice,
-                # but must also be accounted for on the final invoice.
-
-                delta_amount = 0
-                for order_line in self.order_line:
-                    if not order_line.is_downpayment:
-                        continue
-                    inv_amt = order_amt = 0
-                    for invoice_line in order_line.invoice_lines:
-                        sign = 1 if invoice_line.move_id.is_inbound() else -1
-                        if invoice_line.move_id == move:
-                            inv_amt += invoice_line.price_total * sign
-                        elif invoice_line.move_id.state != AccountMoveState.CANCEL:  # filter out canceled dp lines
-                            order_amt += invoice_line.price_total * sign
-                    if inv_amt and order_amt:
-                        # if not inv_amt, this order line is not related to current move
-                        # if no order_amt, dp order line was not invoiced
-                        delta_amount += inv_amt + order_amt
-
-                if not move.currency_id.is_zero(delta_amount):
-                    receivable_line = move.line_ids.filtered(
-                        lambda aml: aml.account_id.account_type == AccountType.ASSET_RECEIVABLE)[:1]
-                    product_lines = move.line_ids.filtered(
-                        lambda aml: aml.display_type == AccountMoveLineDisplayType.PRODUCT and aml.is_downpayment)
-                    tax_lines = move.line_ids.filtered(
-                        lambda aml: aml.tax_line_id.amount_type not in (False, 'fixed'))
-                    if tax_lines and product_lines and receivable_line:
-                        line_commands = [Command.update(receivable_line.id, {
-                            'amount_currency': receivable_line.amount_currency + delta_amount,
-                        })]
-                        delta_sign = 1 if delta_amount > 0 else -1
-                        for lines, attr, sign in (
-                            (product_lines, 'price_total', -1 if move.is_inbound() else 1),
-                            (tax_lines, 'amount_currency', 1),
-                        ):
-                            remaining = delta_amount
-                            lines_len = len(lines)
-                            for line in lines:
-                                if move.currency_id.compare_amounts(remaining, 0) != delta_sign:
-                                    break
-                                amt = delta_sign * max(
-                                    move.currency_id.rounding,
-                                    abs(move.currency_id.round(remaining / lines_len)),
-                                )
-                                remaining -= amt
-                                line_commands.append(Command.update(line.id, {attr: line[attr] + amt * sign}))
-                        move.line_ids = line_commands
-
-            move.message_post_with_source(
-                'mail.message_origin_link',
-                render_values={'self': move, 'origin': move.line_ids.sale_line_ids.order_id},
-                subtype_xmlid='mail.mt_note',
-            )
-        return moves
+        return SaleOrderInvoicing(self)._adjust_downpayment_delta(moves, final)
 
     # MAIL #
 
@@ -1810,71 +1453,25 @@ class SaleOrder(models.Model):
 
     def _track_finalize(self):
         """ Override of `mail` to prevent logging changes when the SO is in a draft state. """
-        if (len(self) == 1
-            # The method _track_finalize is sometimes called too early or too late and it
-            # might cause a desynchronization with the cache, thus this condition is needed.
-            and self.env.cache.contains(self, self._fields['state']) and self._discard_tracking()):
-            self.env.cr.precommit.data.pop(f'mail.tracking.{self._name}', {})
+        if SaleOrderCommunication(self).should_discard_tracking():
+            self.env.cr.precommit.data.pop(f'mail.tracking.{self.order._name}', {})
             self.env.flush_all()
             return
         return super()._track_finalize()
 
     @api.returns('mail.message', lambda value: value.id)
     def message_post(self, **kwargs):
-        if self.env.context.get('mark_so_as_sent'):
-            self.filtered(lambda o: o.state == SaleOrderState.DRAFT).with_context(tracking_disable=True).write({'state': 'sent'})
-        so_ctx = {'mail_post_autofollow': self.env.context.get('mail_post_autofollow', True)}
-        if self.env.context.get('mark_so_as_sent') and 'mail_notify_author' not in kwargs:
-            kwargs['notify_author'] = self.env.user.partner_id.id in (kwargs.get('partner_ids') or [])
-        return super(SaleOrder, self.with_context(**so_ctx)).message_post(**kwargs)
+        ctx_updates, new_kwargs = SaleOrderCommunication(self).prepare_message_post_kwargs(kwargs)
+
+        return super(SaleOrder, self.with_context(**ctx_updates)).message_post(**new_kwargs)
 
     def _notify_get_recipients_groups(self, message, model_description, msg_vals=None):
-        """ Give access button to users and portal customer as portal is integrated
-        in sale. Customer and portal group have probably no right to see
-        the document so they don't have the access button. """
         groups = super()._notify_get_recipients_groups(
             message, model_description, msg_vals=msg_vals
         )
-        if not self:
-            return groups
 
-        self.ensure_one()
-        if self._context.get('proforma'):
-            for group in [g for g in groups if g[0] in ('portal_customer', 'portal', 'follower', 'customer')]:
-                group[2]['has_button_access'] = False
-            return groups
-        local_msg_vals = dict(msg_vals or {})
+        return SaleOrderCommunication(self)._notify_get_recipients_groups(groups, msg_vals)
 
-        # portal customers have full access (existence not granted, depending on partner_id)
-        try:
-            customer_portal_group = next(group for group in groups if group[0] == 'portal_customer')
-        except StopIteration:
-            pass
-        else:
-            access_opt = customer_portal_group[2].setdefault('button_access', {})
-            is_tx_pending = self.get_portal_last_transaction().state == PaymentTransactionState.PENDING
-            if self._has_to_be_signed():
-                if self._has_to_be_paid():
-                    access_opt['title'] = _("View Quotation") if is_tx_pending else _("Sign & Pay Quotation")
-                else:
-                    access_opt['title'] = _("Accept & Sign Quotation")
-            elif self._has_to_be_paid() and not is_tx_pending:
-                access_opt['title'] = _("Accept & Pay Quotation")
-            elif self.state in ('draft', 'sent'):
-                access_opt['title'] = _("View Quotation")
-
-        # enable followers that have access through portal
-        follower_group = next(group for group in groups if group[0] == 'follower')
-        follower_group[2]['active'] = True
-        follower_group[2]['has_button_access'] = True
-        access_opt = follower_group[2].setdefault('button_access', {})
-        if self.state in ('draft', 'sent'):
-            access_opt['title'] = _("View Quotation")
-        else:
-            access_opt['title'] = _("View Order")
-        access_opt['url'] = self._notify_get_action_link('view', **local_msg_vals)
-
-        return groups
 
     def _notify_by_email_prepare_rendering_context(self, message, msg_vals=False, model_description=False,
                                                    force_email_company=False, force_email_lang=False):
@@ -1882,17 +1479,7 @@ class SaleOrder(models.Model):
             message, msg_vals, model_description=model_description,
             force_email_company=force_email_company, force_email_lang=force_email_lang
         )
-        lang_code = render_context.get('lang')
-        record = render_context['record']
-        subtitles = [f"{record.name} - {record.partner_id.name}" if record.partner_id else record.name]
-        if self.amount_total:
-            # Do not show the price in subtitles if zero (e.g. e-commerce orders are created empty)
-            subtitles.append(
-                format_amount(self.env, self.amount_total, self.currency_id, lang_code=lang_code),
-            )
-
-        render_context['subtitles'] = subtitles
-        return render_context
+        return SaleOrderCommunication(self)._notify_by_email_prepare_rendering_context(render_context)
 
     def _phone_get_number_fields(self):
         """ No phone or mobile field is available on sale model. Instead SMS will
@@ -1900,20 +1487,14 @@ class SaleOrder(models.Model):
         return []
 
     def _track_subtype(self, init_values):
-        self.ensure_one()
-        if 'state' in init_values and self.state == SaleOrderState.SALE:
-            return self.env.ref('sale.mt_order_confirmed')
-        elif 'state' in init_values and self.state == SaleOrderState.SENT:
-            return self.env.ref('sale.mt_order_sent')
+        subtype = SaleOrderCommunication(self)._track_subtype(init_values)
+        if subtype:
+            return subtype
         return super()._track_subtype(init_values)
 
     def _message_get_suggested_recipients(self):
         recipients = super()._message_get_suggested_recipients()
-        if self.partner_id:
-            self._message_add_suggested_recipient(
-                recipients, partner=self.partner_id, reason=_("Customer")
-            )
-        return recipients
+        return SaleOrderCommunication(self)._message_get_suggested_recipients(recipients)
 
     # PAYMENT #
 
