@@ -1,8 +1,7 @@
 from .constants import SaleOrderState
 from odoo.addons.payment import utils as payment_utils
-from odoo import SUPERUSER_ID
 
-from .constants import *
+from .constants import PaymentTransactionState
 
 class SaleOrderPayment:
     def __init__(self, order):

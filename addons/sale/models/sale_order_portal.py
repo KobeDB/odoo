@@ -1,4 +1,4 @@
-from .constants import *
+from .constants import SaleOrderState
 
 class SaleOrderPortal:
     def __init__(self, order):

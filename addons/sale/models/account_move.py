@@ -5,7 +5,7 @@ from odoo import api, fields, models, _
 from odoo.tools import groupby
 import logging
 
-from .constants import *
+from .constants import AccountMoveType, AccountMovePaymentState, AccountPaymentState, AccountAccountType
 
 _logger = logging.getLogger(__name__)
 LOYALTY_LOGGING = False

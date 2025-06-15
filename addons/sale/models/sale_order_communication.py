@@ -4,7 +4,7 @@ from odoo.tools import format_amount
 from odoo import _, SUPERUSER_ID
 from odoo.http import request
 
-from .constants import *
+from .constants import MailCompositionMode
 
 class SaleOrderCommunication:
     def __init__(self, order):

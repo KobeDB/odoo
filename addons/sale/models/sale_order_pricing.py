@@ -1,5 +1,5 @@
 from odoo import fields
-from .constants import *
+from .constants import EarlyPayDiscountComputation
 
 class SaleOrderPricing:
     def __init__(self, order):

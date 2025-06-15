@@ -2,7 +2,7 @@ from odoo import Command
 from odoo.tools import float_is_zero
 from itertools import groupby
 
-from .constants import *
+from .constants import SaleOrderState, InvoiceStatus, AccountMoveState, AccountType, AccountMoveLineDisplayType, OrderLineDisplayType, PaymentTransactionState, AccountMoveType
 
 class SaleOrderInvoicing:
     def __init__(self, order):

@@ -13,7 +13,7 @@ from odoo.tools import float_compare, float_is_zero, format_date, groupby
 from odoo.tools.translate import _
 import logging
 
-from .constants import *
+from .constants import OrderLineDisplayType, SaleOrderLineQtyDeliveredMethod, InvoiceStatus, ProductType, ProductAttributeDisplayType, AccountMoveState, AccountMovePaymentState, AccountMoveType, SaleOrderState, ProductTemplateInvoicePolicy, WarningMessage, AccountMoveLineDisplayType
 
 _logger = logging.getLogger(__name__)
 
@@ -33,9 +33,6 @@ class SaleOrderLine(models.Model):
             "CHECK(display_type IS NULL OR (product_id IS NULL AND price_unit = 0 AND product_uom_qty = 0 AND product_uom IS NULL AND customer_lead = 0))",
             "Forbidden values on non-accountable sale order line"),
     ]
-
-    # from SLM
-    is_reward_line = fields.Boolean(string="Is a program reward line", default=False)
 
     # Fields are ordered according by tech & business logics
     # and computed fields are defined after their dependencies.
@@ -372,7 +369,7 @@ class SaleOrderLine(models.Model):
 
     @api.depends('product_id', 'linked_line_id', 'linked_line_ids')
     def _compute_name(self):
-        for line in self - self.filtered("is_reward_line"):
+        for line in self:
             if not line.product_id and not line.is_downpayment:
                 continue
 
@@ -504,10 +501,9 @@ class SaleOrderLine(models.Model):
     @api.depends('product_id', 'company_id')
     def _compute_tax_id(self):
         # integrated loyalty here
-        reward_lines = self.filtered('is_reward_line')
         lines_by_company = defaultdict(lambda: self.env['sale.order.line'])
         cached_taxes = {}
-        for line in self - reward_lines:
+        for line in self:
             if line.product_type == 'combo':
                 line.tax_id = False
                 continue
@@ -532,13 +528,6 @@ class SaleOrderLine(models.Model):
                 # If company_id is set, always filter taxes by the company
                 line.tax_id = result
 
-        # integrated loyalty here
-        for line in reward_lines:
-            line = line.with_company(line.company_id)
-            fpos = line.order_id.fiscal_position_id or line.order_id.fiscal_position_id._get_fiscal_position(line.order_partner_id)
-            # If company_id is set, always filter taxes by the company
-            taxes = line.tax_id.filtered(lambda r: not line.company_id or r.company_id == line.company_id)
-            line.tax_id = fpos.map_tax(taxes)
 
     def _get_custom_compute_tax_cache_key(self):
         """Hook method to be able to set/get cached taxes while computing them"""
@@ -1011,7 +1000,7 @@ class SaleOrderLine(models.Model):
         in the SO.
         """
         self.ensure_one()
-        return self.product_id.id != self.company_id.sale_discount_product_id.id and not self.is_reward_line #integrated loyalty here
+        return self.product_id.id != self.company_id.sale_discount_product_id.id
 
     @api.depends('invoice_lines', 'invoice_lines.price_total', 'invoice_lines.move_id.state', 'invoice_lines.move_id.move_type')
     def _compute_untaxed_amount_invoiced(self):
@@ -1218,19 +1207,10 @@ class SaleOrderLine(models.Model):
         if self.env.context.get('sale_no_log_for_new_lines'):
             return lines
 
-        # integrate handling of loyalty points \/
-
-        # irrelevant to current implementation
-
-        # for line in lines:
-        #     if line.product_id and line.state == 'sale':
-        #         msg = _("Extra line with %s", line.product_id.display_name)
-        #         line.order_id.message_post(body=msg)
-        #     # integrated SLM
-        #     if line.coupon_id and line.points_cost and line.state == 'sale':
-        #         line.coupon_id.points -= line.points_cost
-        #         line.order_id._update_loyalty_history(line.coupon_id, line.points_cost)
-        # integrate handling of loyalty points /\
+        for line in lines:
+            if line.product_id and line.state == 'sale':
+                msg = _("Extra line with %s", line.product_id.display_name)
+                line.order_id.message_post(body=msg)
 
         return lines
 
@@ -1461,10 +1441,6 @@ class SaleOrderLine(models.Model):
         self.ensure_one()
         return False
 
-    def _is_not_sellable_line(self):
-        # True if the line is a computed line (reward, delivery, ...) that user cannot add manually
-        return self.is_reward_line # integrate loyalty here
-
     def _get_product_catalog_lines_data(self, **kwargs):
         """ Return information about sale order lines in `self`.
 
@@ -1595,8 +1571,6 @@ class SaleOrderLine(models.Model):
             )
         ) or self.env['sale.order.line']
 
-    # hypothesis: can't be a down payment and it can't already be discounted
-    # add "can't be a reward line"
     def _sellable_lines_domain(self):
         discount_products_ids = self.env.companies.sale_discount_product_id.ids
         domain = [('is_downpayment', '=', False)]

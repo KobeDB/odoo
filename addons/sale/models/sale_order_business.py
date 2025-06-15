@@ -3,7 +3,7 @@ from .constants import AttachedOnSale, SaleOrderState
 from odoo import _
 from odoo.http import request
 
-from .constants import *
+from .constants import OrderLineDisplayType, SaleAdvancePaymentMethod, WarningMessage
 
 class SaleOrderBusiness:
     def __init__(self, order):

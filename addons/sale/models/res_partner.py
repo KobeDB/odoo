@@ -5,7 +5,7 @@ from odoo.addons.base.models.res_partner import WARNING_MESSAGE, WARNING_HELP
 from odoo.osv import expression
 import logging
 
-from .constants import *
+from .constants import SaleOrderState
 
 _logger = logging.getLogger(__name__)
 

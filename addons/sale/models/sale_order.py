@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import timedelta
 from itertools import groupby
 
-from .constants import *
+from .constants import InvoiceStatus, SaleOrderState, TermsType, AccountMoveType, PaymentTransactionState, WarningMessage, ProductType, AccountMoveState
 
 from odoo import SUPERUSER_ID, _, api, fields, models
 from odoo.exceptions import (

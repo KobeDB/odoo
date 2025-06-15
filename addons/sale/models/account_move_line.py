@@ -4,7 +4,7 @@ from odoo import fields, models, _
 from odoo.exceptions import UserError
 from odoo.tools import float_compare, float_is_zero
 
-from .constants import *
+from .constants import SaleOrderState, ProductTemplateInvoicePolicy, ProductTemplateExpensePolicy
 
 class AccountMoveLine(models.Model):
     _inherit = 'account.move.line'
