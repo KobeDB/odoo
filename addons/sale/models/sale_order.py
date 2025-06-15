@@ -554,6 +554,27 @@ class SaleOrder(models.Model):
     def _compute_amounts(self):
         self.pricing.compute_totals()
 
+    # constraint checking methods
+    @api.constrains('loyalty_discount')
+    def _check_loyalty_discount(self):
+        for order in self:
+            if order.loyalty_discount < 0:
+                raise ValidationError("The loyalty_discount can't be negative.")
+
+    @api.constrains('loyalty_points')
+    def _check_loyalty_points(self):
+        for order in self:
+            if order.loyalty_points < 0:
+                raise ValidationError("The number of loyalty_points to be awarded can't be negative.")
+
+    @api.constrains('loyalty_points_used')
+    def _check_loyalty_points_used(self):
+        for order in self:
+            if order.loyalty_points_used < 0:
+                raise ValidationError("The number of loyalty_points_used can't be negative.")
+
+    # adapted/new methods ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
     def _add_base_lines_for_early_payment_discount(self):
         return self.pricing.compute_early_payment_discount()
 

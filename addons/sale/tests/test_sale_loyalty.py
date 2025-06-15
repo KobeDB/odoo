@@ -10,7 +10,7 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
-@tagged('post_install', '-at_install', 'loyalty')
+@tagged('post_install', '-at_install', 'loyalty', 'sale')
 class TestSaleOrderLoyalty(TestSaleCommonBase):
     def setUp(self):
         super().setUp()

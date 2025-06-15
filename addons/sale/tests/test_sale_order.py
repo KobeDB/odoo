@@ -13,6 +13,7 @@ from odoo.tests import Form, HttpCase, tagged
 from odoo.addons.account.tests.common import AccountTestInvoicingCommon
 from odoo.addons.mail.tests.common import MailCommon
 from odoo.addons.sale.tests.common import SaleCommon
+from parameterized import parameterized
 
 
 @tagged('post_install', '-at_install')
@@ -681,6 +682,31 @@ class TestSaleOrder(SaleCommon):
             ],
         })
         self.assertEqual(new_order.order_line.price_unit, 22.0)
+
+    # constraint tests
+    @parameterized.expand([
+        # (loyalty_discount),
+        (-20,), (-0.1,),
+    ])
+    def test_loyalty_discount(self, loyalty_discount):
+        with self.assertRaises(ValidationError):
+            self._create_sale_order().write({'loyalty_discount': loyalty_discount})
+
+    @parameterized.expand([
+        # (loyalty_points),
+        (-20,), (-0.1,),
+    ])
+    def test_loyalty_points(self, loyalty_points):
+        with self.assertRaises(ValidationError):
+            self._create_sale_order().write({'loyalty_points': loyalty_points})
+
+    @parameterized.expand([
+        # (loyalty_points_used),
+        (-20,), (-0.1,),
+    ])
+    def test_loyalty_points_used(self, loyalty_points_used):
+        with self.assertRaises(ValidationError):
+            self._create_sale_order().write({'loyalty_points_used': loyalty_points_used})
 
 
 @tagged('post_install', '-at_install')
