@@ -39,6 +39,7 @@ from .sale_order_payment import SaleOrderPayment
 from .sale_order_edi import SaleOrderEDI
 from .sale_order_loyalty import SaleOrderLoyalty
 from .sale_order_portal import SaleOrderPortal
+from .sale_order_validation import SaleOrderValidation
 
 _logger = logging.getLogger(__name__)
 LOYALTY_LOGGING = False
@@ -78,6 +79,10 @@ class SaleOrder(models.Model):
          'CHECK(loyalty_points_used >= 0)',
          'The utilised loyalty points can\'t be a negative amount.'),
     ]
+
+    @property
+    def validation(self):
+        return SaleOrderValidation(self)
 
     @property
     def pricing(self):
@@ -557,21 +562,15 @@ class SaleOrder(models.Model):
     # constraint checking methods
     @api.constrains('loyalty_discount')
     def _check_loyalty_discount(self):
-        for order in self:
-            if order.loyalty_discount < 0:
-                raise ValidationError("The loyalty_discount can't be negative.")
+        self.validation._check_loyalty_discount()
 
     @api.constrains('loyalty_points')
     def _check_loyalty_points(self):
-        for order in self:
-            if order.loyalty_points < 0:
-                raise ValidationError("The number of loyalty_points to be awarded can't be negative.")
+        self.validation._check_loyalty_points()
 
     @api.constrains('loyalty_points_used')
     def _check_loyalty_points_used(self):
-        for order in self:
-            if order.loyalty_points_used < 0:
-                raise ValidationError("The number of loyalty_points_used can't be negative.")
+        self.validation._check_loyalty_points_used()
 
     # adapted/new methods ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -778,26 +777,11 @@ class SaleOrder(models.Model):
 
     @api.constrains('company_id', 'order_line')
     def _check_order_line_company_id(self):
-        for order in self:
-            invalid_companies = order.order_line.product_id.company_id.filtered(
-                lambda c: order.company_id not in c._accessible_branches()
-            )
-            if invalid_companies:
-                bad_products = order.order_line.product_id.filtered(
-                    lambda p: p.company_id and p.company_id in invalid_companies
-                )
-                raise ValidationError(_(
-                    "Your quotation contains products from company %(product_company)s whereas your quotation belongs to company %(quote_company)s. \n Please change the company of your quotation or remove the products from other companies (%(bad_products)s).",
-                    product_company=', '.join(invalid_companies.sudo().mapped('display_name')),
-                    quote_company=order.company_id.display_name,
-                    bad_products=', '.join(bad_products.mapped('display_name')),
-                ))
+        self.validation._check_order_line_company_id()
 
     @api.constrains('prepayment_percent')
     def _check_prepayment_percent(self):
-        for order in self:
-            if order.require_payment and not (0 < order.prepayment_percent <= 1.0):
-                raise ValidationError(_("Prepayment percentage must be a valid percentage."))
+        self.validation._check_prepayment_percent()
 
     #=== ONCHANGE METHODS ===#
 
