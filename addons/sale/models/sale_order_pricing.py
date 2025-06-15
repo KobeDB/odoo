@@ -12,77 +12,89 @@ class SaleOrderPricing:
         """
         Compute untaxed, tax, and total amounts for the sale order.
         """
-        AccountTax = self.env['account.tax']
-        order_lines = self.order.order_line.filtered(lambda x: not x.display_type)
+        for order in self.order:
+            AccountTax = self.env['account.tax']
+            order_lines = order.order_line.filtered(lambda x: not x.display_type)
 
-        base_lines = [line._prepare_base_line_for_taxes_computation() for line in order_lines]
-        base_lines += self.compute_early_payment_discount()
+            base_lines = [line._prepare_base_line_for_taxes_computation() for line in order_lines]
+            base_lines += self.compute_early_payment_discount()
 
-        AccountTax._add_tax_details_in_base_lines(base_lines, self.company)
-        AccountTax._round_base_lines_tax_details(base_lines, self.company)
+            AccountTax._add_tax_details_in_base_lines(base_lines, self.company)
+            AccountTax._round_base_lines_tax_details(base_lines, self.company)
 
-        tax_totals = AccountTax._get_tax_totals_summary(
-            base_lines=base_lines,
-            currency=self.currency,
-            company=self.company,
-        )
+            tax_totals = AccountTax._get_tax_totals_summary(
+                base_lines=base_lines,
+                currency=self.currency,
+                company=self.company,
+            )
 
-        return {
-            'amount_untaxed': tax_totals['base_amount_currency'],
-            'amount_tax': tax_totals['tax_amount_currency'],
-            'amount_total': tax_totals['total_amount_currency'],
-        }
+            order.amount_untaxed = tax_totals['base_amount_currency']
+            order.amount_tax = tax_totals['tax_amount_currency']
+            order.amount_total = tax_totals['total_amount_currency']
+
+            totals = {
+                'amount_untaxed': tax_totals['base_amount_currency'],
+                'amount_tax': tax_totals['tax_amount_currency'],
+                'amount_total': tax_totals['total_amount_currency'],
+            }
+
+            order.loyalty._loyalty_discount()
+            order.loyalty._apply_discount(totals)
 
     def compute_early_payment_discount(self):
         """
         Add tax lines for early payment discounts if applicable.
         Returns a list of base lines.
         """
-        self.order.ensure_one()
-        epd_lines = []
-        if (
-            self.order.payment_term_id.early_discount
-            and self.order.payment_term_id.early_pay_discount_computation == EarlyPayDiscountComputation.MIXED
-            and self.order.payment_term_id.discount_percentage
+        pt = self.order.payment_term_id
+        if not (
+            pt.early_discount and
+            pt.early_pay_discount_computation == 'mixed' and
+            pt.discount_percentage
         ):
-            percentage = self.order.payment_term_id.discount_percentage
-            currency = self.order.currency_id or self.order.company_id.currency_id
-            for line in self.order.order_line.filtered(lambda x: not x.display_type):
-                line_amount_after_discount = (line.price_subtotal / 100) * percentage
-                epd_lines.append(self.env['account.tax']._prepare_base_line_for_taxes_computation(
-                    record=self.order,
-                    price_unit=-line_amount_after_discount,
-                    quantity=1.0,
-                    currency_id=currency,
-                    sign=1,
-                    special_type='early_payment',
-                    tax_ids=line.tax_id,
-                ))
-                epd_lines.append(self.env['account.tax']._prepare_base_line_for_taxes_computation(
-                    record=self.order,
-                    price_unit=line_amount_after_discount,
-                    quantity=1.0,
-                    currency_id=currency,
-                    sign=1,
-                    special_type='early_payment',
-                ))
-        return epd_lines
+            return []
+
+        percentage = pt.discount_percentage
+        lines = []
+        AccountTax = self.env['account.tax']
+
+        for line in self.order.order_line.filtered(lambda x: not x.display_type):
+            discount_amount = (line.price_subtotal / 100.0) * percentage
+            lines.append(AccountTax._prepare_base_line_for_taxes_computation(
+                record=self.order,
+                price_unit=-discount_amount,
+                quantity=1.0,
+                currency_id=self.currency,
+                sign=1,
+                special_type='early_payment',
+                tax_ids=line.tax_id,
+            ))
+            lines.append(AccountTax._prepare_base_line_for_taxes_computation(
+                record=self.order,
+                price_unit=discount_amount,
+                quantity=1.0,
+                currency_id=self.currency,
+                sign=1,
+                special_type='early_payment',
+            ))
+        return lines
 
     def compute_tax_totals(self):
-        AccountTax = self.env['account.tax']
-        order_lines = self.order.order_line.filtered(lambda x: not x.display_type)
+        for order in self.order:
+            AccountTax = self.env['account.tax']
+            order_lines = order.order_line.filtered(lambda x: not x.display_type)
 
-        base_lines = [line._prepare_base_line_for_taxes_computation() for line in order_lines]
-        base_lines += self.compute_early_payment_discount()
+            base_lines = [line._prepare_base_line_for_taxes_computation() for line in order_lines]
+            base_lines += self.compute_early_payment_discount()
 
-        AccountTax._add_tax_details_in_base_lines(base_lines, self.company)
-        AccountTax._round_base_lines_tax_details(base_lines, self.company)
+            AccountTax._add_tax_details_in_base_lines(base_lines, self.company)
+            AccountTax._round_base_lines_tax_details(base_lines, self.company)
 
-        return AccountTax._get_tax_totals_summary(
-            base_lines=base_lines,
-            currency=self.currency,
-            company=self.company,
-        )
+            order.tax_totals = AccountTax._get_tax_totals_summary(
+                base_lines=base_lines,
+                currency=self.currency,
+                company=self.company,
+            )
 
     def _get_update_prices_lines(self):
         return self.order.order_line.filtered(lambda line: not line.display_type)
@@ -105,23 +117,26 @@ class SaleOrderPricing:
         self.order.show_update_fpos = False
     
     def compute_amount_undiscounted(self):
-        total = 0.0
-        for line in self.order.order_line:
-            if line.discount != 100:
-                total += (line.price_subtotal * 100.0) / (100.0 - line.discount)
-            else:
-                total += line.price_unit * line.product_uom_qty
-        return total
+        for order in self.order:
+            total = 0.0
+            for line in order.order_line:
+                if line.discount != 100:
+                    total += (line.price_subtotal * 100.0) / (100.0 - line.discount)
+                else:
+                    total += line.price_unit * line.product_uom_qty
+            order.amount_undiscounted = total
     
-    def get_currency_id(self):
-        return self.order.pricelist_id.currency_id or self.order.company_id.currency_id
+    def compute_currency_id(self):
+        for order in self.order:
+            order.currency_id = order.pricelist_id.currency_id or order.company_id.currency_id
 
-    def get_currency_rate(self):
-        currency = self.order.currency_id
-        date = (self.order.date_order or fields.Datetime.now()).date()
-        return self.env['res.currency']._get_conversion_rate(
-            from_currency=self.order.company_id.currency_id,
-            to_currency=currency,
-            company=self.order.company_id,
-            date=date,
-        )
+    def compute_currency_rate(self):
+        for order in self.order:
+            currency = order.currency_id
+            date = (order.date_order or fields.Datetime.now()).date()
+            order.currency_rate = self.env['res.currency']._get_conversion_rate(
+                from_currency=order.company_id.currency_id,
+                to_currency=currency,
+                company=order.company_id,
+                date=date,
+            )

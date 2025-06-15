@@ -86,7 +86,6 @@ class SaleOrderCommunication:
 
         :return: `mail.template` record or None if default template wasn't found
         """
-        self.order.ensure_one()
         default_confirmation_template_id = self.env['ir.config_parameter'].sudo().get_param(
             'sale.default_confirmation_template'
         )
@@ -96,6 +95,15 @@ class SaleOrderCommunication:
             return default_confirmation_template
         else:
             return self.env.ref('sale.mail_template_sale_confirmation', raise_if_not_found=False)
+    
+    def _send_order_confirmation_mail(self):
+        """ Send a mail to the SO customer to inform them that their order has been confirmed.
+
+        :return: None
+        """
+        for order in self.order:
+            mail_template = self._get_confirmation_template()
+            order._send_order_notification_mail(mail_template)
     
     def action_quotation_sent(self):
         """ Mark the given draft quotation(s) as sent.

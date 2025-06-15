@@ -9,65 +9,83 @@ class SaleOrderInvoicing:
         self.order = order
         self.env = order.env
     
-    def compute_invoice_status(self, line_invoice_status, lines_domain):
-        order = self.order
-        if order.state != SaleOrderState.SALE:
-            return str(InvoiceStatus.NO)
-        elif any(invoice_status == InvoiceStatus.TO_INVOICE for invoice_status in line_invoice_status):
-            if any(invoice_status == InvoiceStatus.NO for invoice_status in line_invoice_status):
-                # If only discount/delivery/promotion lines can be invoiced, the SO should not
-                # be invoiceable.
-                invoiceable_domain = lines_domain + [('invoice_status', '=', 'to invoice')]
-                invoiceable_lines = order.order_line.filtered_domain(invoiceable_domain)
-                special_lines = invoiceable_lines.filtered(
-                    lambda sol: not sol._can_be_invoiced_alone()
-                )
-                if invoiceable_lines == special_lines:
-                    return str(InvoiceStatus.NO)
+    def compute_invoice_status(self):
+        confirmed_orders = self.order.filtered(lambda so: so.state == SaleOrderState.SALE)
+        (self.order - confirmed_orders).invoice_status = InvoiceStatus.NO
+        if not confirmed_orders:
+            return
+        lines_domain = [('is_downpayment', '=', False), ('display_type', '=', False)]
+        line_invoice_status_all = [
+            (order.id, invoice_status)
+            for order, invoice_status in self.env['sale.order.line']._read_group(
+                lines_domain + [('order_id', 'in', confirmed_orders.ids)],
+                ['order_id', 'invoice_status']
+            )
+        ]
+        for order in confirmed_orders:
+            line_invoice_status = [d[1] for d in line_invoice_status_all if d[0] == order.id]
+            if order.state != SaleOrderState.SALE:
+                order.invoice_status = str(InvoiceStatus.NO)
+            elif any(invoice_status == InvoiceStatus.TO_INVOICE for invoice_status in line_invoice_status):
+                if any(invoice_status == InvoiceStatus.NO for invoice_status in line_invoice_status):
+                    # If only discount/delivery/promotion lines can be invoiced, the SO should not
+                    # be invoiceable.
+                    invoiceable_domain = lines_domain + [('invoice_status', '=', 'to invoice')]
+                    invoiceable_lines = order.order_line.filtered_domain(invoiceable_domain)
+                    special_lines = invoiceable_lines.filtered(
+                        lambda sol: not sol._can_be_invoiced_alone()
+                    )
+                    if invoiceable_lines == special_lines:
+                        order.invoice_status = str(InvoiceStatus.NO)
+                    else:
+                        order.invoice_status = str(InvoiceStatus.TO_INVOICE)
                 else:
-                    return str(InvoiceStatus.TO_INVOICE)
+                    order.invoice_status = str(InvoiceStatus.TO_INVOICE)
+            elif line_invoice_status and all(invoice_status == InvoiceStatus.INVOICED for invoice_status in line_invoice_status):
+                order.invoice_status = str(InvoiceStatus.INVOICED)
+            elif line_invoice_status and all(invoice_status in (str(InvoiceStatus.INVOICED), str(InvoiceStatus.UPSELLING)) for invoice_status in line_invoice_status):
+                order.invoice_status = str(InvoiceStatus.UPSELLING)
             else:
-                return str(InvoiceStatus.TO_INVOICE)
-        elif line_invoice_status and all(invoice_status == InvoiceStatus.INVOICED for invoice_status in line_invoice_status):
-            return str(InvoiceStatus.INVOICED)
-        elif line_invoice_status and all(invoice_status in (str(InvoiceStatus.INVOICED), str(InvoiceStatus.UPSELLING)) for invoice_status in line_invoice_status):
-            return str(InvoiceStatus.UPSELLING)
-        else:
-            return str(InvoiceStatus.NO)
+                order.invoice_status = str(InvoiceStatus.NO)
     
-    def create_invoices(self, final, invoice_item_sequence):
-        order = self.order
+    def create_invoices(self, final):
+        invoice_vals_list = []
+        invoice_item_sequence = 0
+        for order in self.order:
+            if order.partner_invoice_id.lang:
+                order = order.with_context(lang=order.partner_invoice_id.lang)
+            order = order.with_company(order.company_id)
 
-        if order.partner_invoice_id.lang:
-            order = order.with_context(lang=order.partner_invoice_id.lang)
-        order = order.with_company(order.company_id)
+            invoice_vals = order._prepare_invoice()
+            invoiceable_lines = order._get_invoiceable_lines(final)
 
-        invoice_vals = order._prepare_invoice()
-        invoiceable_lines = order._get_invoiceable_lines(final)
+            if not any(not line.display_type for line in invoiceable_lines):
+                return None, invoice_item_sequence
 
-        if not any(not line.display_type for line in invoiceable_lines):
-            return None, invoice_item_sequence
-
-        invoice_line_vals = []
-        down_payment_section_added = False
-        for line in invoiceable_lines:
-            if not down_payment_section_added and line.is_downpayment:
+            invoice_line_vals = []
+            down_payment_section_added = False
+            for line in invoiceable_lines:
+                if not down_payment_section_added and line.is_downpayment:
+                    invoice_line_vals.append(
+                        Command.create(
+                            order._prepare_down_payment_section_line(sequence=invoice_item_sequence)
+                        )
+                    )
+                    down_payment_section_added = True
+                    invoice_item_sequence += 1
                 invoice_line_vals.append(
                     Command.create(
-                        order._prepare_down_payment_section_line(sequence=invoice_item_sequence)
+                        line._prepare_invoice_line(sequence=invoice_item_sequence)
                     )
                 )
-                down_payment_section_added = True
                 invoice_item_sequence += 1
-            invoice_line_vals.append(
-                Command.create(
-                    line._prepare_invoice_line(sequence=invoice_item_sequence)
-                )
-            )
-            invoice_item_sequence += 1
 
-        invoice_vals['invoice_line_ids'] += invoice_line_vals
-        return invoice_vals, invoice_item_sequence
+            invoice_vals['invoice_line_ids'] += invoice_line_vals
+
+            if invoice_vals:
+                invoice_vals_list.append(invoice_vals)
+            
+        return invoice_vals_list
     
     def _get_invoice_grouping_keys(self):
         return ['company_id', 'partner_id', 'currency_id']
