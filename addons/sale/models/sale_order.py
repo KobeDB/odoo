@@ -1076,15 +1076,7 @@ class SaleOrder(models.Model):
         self.communication._send_order_confirmation_mail()
 
     def _send_payment_succeeded_for_order_mail(self):
-        """ Send a mail to the SO customer to inform them that a payment has been initiated.
-
-        :return: None
-        """
-        mail_template = self.env.ref(
-            'sale.mail_template_sale_payment_executed', raise_if_not_found=False
-        )
-        for order in self:
-            order._send_order_notification_mail(mail_template)
+        self.communication._send_payment_succeeded_for_order_mail()
 
     def _send_order_notification_mail(self, mail_template):
         self.communication._send_order_notification_mail(mail_template)
@@ -1220,33 +1212,7 @@ class SaleOrder(models.Model):
         return self.invoicing.prepare_invoice_dict()
 
     def action_view_invoice(self, invoices=False):
-        if not invoices:
-            invoices = self.mapped('invoice_ids')
-        action = self.env['ir.actions.actions']._for_xml_id('account.action_move_out_invoice_type')
-        if len(invoices) > 1:
-            action['domain'] = [('id', 'in', invoices.ids)]
-        elif len(invoices) == 1:
-            form_view = [(self.env.ref('account.view_move_form').id, 'form')]
-            if 'views' in action:
-                action['views'] = form_view + [(state,view) for state,view in action['views'] if view != 'form']
-            else:
-                action['views'] = form_view
-            action['res_id'] = invoices.id
-        else:
-            action = {'type': 'ir.actions.act_window_close'}
-
-        context = {
-            'default_move_type': 'out_invoice',
-        }
-        if len(self) == 1:
-            context.update({
-                'default_partner_id': self.partner_id.id,
-                'default_partner_shipping_id': self.partner_shipping_id.id,
-                'default_invoice_payment_term_id': self.payment_term_id.id or self.partner_id.property_payment_term_id.id or self.env['account.move'].default_get(['invoice_payment_term_id']).get('invoice_payment_term_id'),
-                'default_invoice_origin': self.name,
-            })
-        action['context'] = context
-        return action
+        return self.invoicing.action_view_invoice(invoices)
 
     def _get_update_prices_lines(self):
         """ Hook to exclude specific lines which should not be updated based on price list recomputation """
@@ -1332,12 +1298,8 @@ class SaleOrder(models.Model):
     # MAIL #
 
     def _discard_tracking(self):
-        self.ensure_one()
-        return (
-            self.state == SaleOrderState.DRAFT
-            and request and request.env.context.get('catalog_skip_tracking')
-        )
-
+        return self.communication._discard_tracking()
+    
     def _track_finalize(self):
         """ Override of `mail` to prevent logging changes when the SO is in a draft state. """
         if self.communication.should_discard_tracking():

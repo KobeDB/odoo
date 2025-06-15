@@ -2,6 +2,7 @@ from .constants import PaymentTransactionState, SaleOrderState
 from odoo.exceptions import UserError
 from odoo.tools import format_amount
 from odoo import _, SUPERUSER_ID
+from odoo.http import request
 
 class SaleOrderCommunication:
     def __init__(self, order):
@@ -227,4 +228,22 @@ class SaleOrderCommunication:
             mail_template,
             email_layout_xmlid='mail.mail_notification_layout_with_responsible_signature',
             subtype_xmlid='mail.mt_comment',
+        )
+    
+    def _send_payment_succeeded_for_order_mail(self):
+        """ Send a mail to the SO customer to inform them that a payment has been initiated.
+
+        :return: None
+        """
+        mail_template = self.env.ref(
+            'sale.mail_template_sale_payment_executed', raise_if_not_found=False
+        )
+        for order in self.order:
+            order._send_order_notification_mail(mail_template)
+    
+    def _discard_tracking(self):
+        self.order.ensure_one()
+        return (
+            self.order.state == SaleOrderState.DRAFT
+            and request and request.env.context.get('catalog_skip_tracking')
         )
