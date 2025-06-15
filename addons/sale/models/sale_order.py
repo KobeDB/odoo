@@ -496,7 +496,7 @@ class SaleOrder(models.Model):
     @api.depends('partner_id', 'company_id')
     def _compute_pricelist_id(self):
         for order in self:
-            if order.state != 'draft':
+            if order.state != SaleOrderState.DRAFT:
                 continue
             if not order.partner_id:
                 order.pricelist_id = False
@@ -584,7 +584,7 @@ class SaleOrder(models.Model):
         # existing invoices. This is necessary since such a refund is not
         # directly linked to the SO.
         for order in self:
-            invoices = order.order_line.invoice_lines.move_id.filtered(lambda r: r.move_type in ('out_invoice', 'out_refund'))
+            invoices = order.order_line.invoice_lines.move_id.filtered(lambda r: r.move_type in (str(AccountMoveType.OUT_INVOICE), str(AccountMoveType.OUT_REFUND)))
             order.invoice_ids = invoices
             order.invoice_count = len(invoices)
 
@@ -616,11 +616,11 @@ class SaleOrder(models.Model):
             #
             # Domain below returns subset of ('order_line.invoice_lines', '!=', False)
             order_ids = self._search([
-                ('order_line.invoice_lines.move_id.move_type', 'in', ('out_invoice', 'out_refund'))
+                ('order_line.invoice_lines.move_id.move_type', 'in', (str(AccountMoveType.OUT_INVOICE), str(AccountMoveType.OUT_REFUND)))
             ])
             return [('id', 'not in', order_ids)]
         return [
-            ('order_line.invoice_lines.move_id.move_type', 'in', ('out_invoice', 'out_refund')),
+            ('order_line.invoice_lines.move_id.move_type', 'in', (str(AccountMoveType.OUT_INVOICE), str(AccountMoveType.OUT_REFUND))),
             ('order_line.invoice_lines.move_id', operator, value),
         ]
 
@@ -718,7 +718,7 @@ class SaleOrder(models.Model):
         today = fields.Date.today()
         for order in self:
             order.is_expired = (
-                order.state in ('draft', 'sent')
+                order.state in (str(SaleOrderState.DRAFT), str(SaleOrderState.SENT))
                 and order.validity_date
                 and order.validity_date < today
             )
@@ -762,7 +762,7 @@ class SaleOrder(models.Model):
     @api.depends('state')
     def _compute_type_name(self):
         for record in self:
-            if record.state in ('draft', 'sent', 'cancel'):
+            if record.state in (str(SaleOrderState.DRAFT), str(SaleOrderState.SENT), str(SaleOrderState.CANCEL)):
                 record.type_name = _("Quotation")
             else:
                 record.type_name = _("Sales Order")
@@ -960,7 +960,7 @@ class SaleOrder(models.Model):
             raise UserError(_("You cannot change the pricelist of a confirmed order !"))
         res = super().write(vals)
         if vals.get('partner_id'):
-            self.filtered(lambda so: so.state in ('sent', 'sale')).message_subscribe(
+            self.filtered(lambda so: so.state in (str(SaleOrderState.SENT), str(SaleOrderState.SALE))).message_subscribe(
                 partner_ids=[vals['partner_id']],
             )
         return res
@@ -978,7 +978,7 @@ class SaleOrder(models.Model):
         }
 
     def action_draft(self):
-        orders = self.filtered(lambda s: s.state in ['cancel', 'sent'])
+        orders = self.filtered(lambda s: s.state in [str(SaleOrderState.CANCEL), str(SaleOrderState.SENT)])
         return orders.write({
             'state': 'draft',
             'signature': False,
@@ -1040,7 +1040,7 @@ class SaleOrder(models.Model):
     def _confirmation_error_message(self):
         """ Return whether order can be confirmed or not if not then returm error message. """
         self.ensure_one()
-        if self.state not in {'draft', 'sent'}:
+        if self.state not in {str(SaleOrderState.DRAFT), str(SaleOrderState.SENT)}:
             return _("Some orders are not in a state requiring confirmation.")
         if any(
             not line.display_type
@@ -1061,7 +1061,7 @@ class SaleOrder(models.Model):
         :rtype: dict
         """
         return {
-            'state': 'sale',
+            'state': str(SaleOrderState.SALE),
             'date_order': fields.Datetime.now()
         }
 
@@ -1128,7 +1128,7 @@ class SaleOrder(models.Model):
     def _action_cancel(self):
         inv = self.invoice_ids.filtered(lambda inv: inv.state == AccountMoveState.DRAFT)
         inv.button_cancel()
-        return self.write({'state': 'cancel'})
+        return self.write({'state': str(SaleOrderState.CANCEL)})
 
     def _show_cancel_wizard(self):
         """ Decide whether the sale.order.cancel wizard should be shown to cancel specified orders.
@@ -1138,7 +1138,7 @@ class SaleOrder(models.Model):
         """
         if self.env.context.get('disable_cancel_warning'):
             return False
-        return any(so.state != 'draft' for so in self)
+        return any(so.state != SaleOrderState.DRAFT for so in self)
 
     def action_preview_sale_order(self):
         self.ensure_one()
@@ -1424,7 +1424,7 @@ class SaleOrder(models.Model):
         filtered_self = self.filtered(
             lambda so: so.ids
                 and (so.user_id or so.partner_id.user_id)
-                and so._origin.invoice_status != 'upselling')
+                and so._origin.invoice_status != InvoiceStatus.UPSELLING)
         super()._compute_field_value(field)
 
         upselling_orders = filtered_self.filtered(lambda so: so.invoice_status == InvoiceStatus.UPSELLING)
