@@ -268,3 +268,32 @@ class SaleOrderInvoicing:
             values['journal_id'] = order.journal_id.id
 
         return values
+    
+    def action_view_invoice(self, invoices=False):
+        if not invoices:
+            invoices = self.order.mapped('invoice_ids')
+        action = self.env['ir.actions.actions']._for_xml_id('account.action_move_out_invoice_type')
+        if len(invoices) > 1:
+            action['domain'] = [('id', 'in', invoices.ids)]
+        elif len(invoices) == 1:
+            form_view = [(self.env.ref('account.view_move_form').id, 'form')]
+            if 'views' in action:
+                action['views'] = form_view + [(state,view) for state,view in action['views'] if view != 'form']
+            else:
+                action['views'] = form_view
+            action['res_id'] = invoices.id
+        else:
+            action = {'type': 'ir.actions.act_window_close'}
+
+        context = {
+            'default_move_type': 'out_invoice',
+        }
+        if len(self.order) == 1:
+            context.update({
+                'default_partner_id': self.order.partner_id.id,
+                'default_partner_shipping_id': self.order.partner_shipping_id.id,
+                'default_invoice_payment_term_id': self.order.payment_term_id.id or self.order.partner_id.property_payment_term_id.id or self.env['account.move'].default_get(['invoice_payment_term_id']).get('invoice_payment_term_id'),
+                'default_invoice_origin': self.order.name,
+            })
+        action['context'] = context
+        return action
