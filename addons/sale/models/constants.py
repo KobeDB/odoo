@@ -188,3 +188,8 @@ class SaleOnboardingPaymentMethod(StrEnum):
     STRIPE              = 'stripe'
     OTHER               = 'other'
     MANUAL              = 'manual'
+
+""" composition_mode in mail/wizard/mail_compose_message.py """
+class MailCompositionMode(StrEnum):
+    COMMENT = 'comment'
+    MASS_MAIL = 'mass_mail'

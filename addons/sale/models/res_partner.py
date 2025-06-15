@@ -5,6 +5,8 @@ from odoo.addons.base.models.res_partner import WARNING_MESSAGE, WARNING_HELP
 from odoo.osv import expression
 import logging
 
+from .constants import *
+
 _logger = logging.getLogger(__name__)
 
 class ResPartner(models.Model):
@@ -51,7 +53,7 @@ class ResPartner(models.Model):
             expression.AND([
                 partner_domain,
                 [
-                    ('state', 'in', ('sent', 'sale')),
+                    ('state', 'in', (str(SaleOrderState.SENT), str(SaleOrderState.SALE))),
                 ]
             ]),
             limit=1,
@@ -90,7 +92,7 @@ class ResPartner(models.Model):
             ('company_id', '=', company.id),
             ('partner_id', 'in', self.ids),
             ('order_line', 'any', [('untaxed_amount_to_invoice', '>', 0)]),
-            ('state', '=', 'sale'),
+            ('state', '=', str(SaleOrderState.SALE)),
         ])
         for (partner, currency), orders in sale_orders.grouped(lambda so: (so.partner_id, so.currency_id)).items():
             amount_to_invoice_sum = sum(orders.mapped('amount_to_invoice'))
@@ -113,7 +115,7 @@ class ResPartner(models.Model):
     def unlink(self):
         # Unlink draft/cancelled SO so that the partner can be removed from database
         self.env['sale.order'].sudo().search([
-            ('state', 'in', ['draft', 'cancel']),
+            ('state', 'in', [str(SaleOrderState.DRAFT), str(SaleOrderState.CANCEL)]),
             '|', '|',
             ('partner_id', 'in', self.ids),
             ('partner_invoice_id', 'in', self.ids),
