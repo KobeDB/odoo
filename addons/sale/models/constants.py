@@ -199,3 +199,11 @@ class SaleAdvancePaymentMethod(StrEnum):
     DELIVERED = 'delivered'
     PERCENTAGE = 'percentage'
     FIXED = 'fixed'
+
+""" display_type in product/product_attribute.py """
+class ProductAttributeDisplayType(StrEnum):
+    RADIO  = 'radio'
+    PILLS  = 'pills'
+    SELECT = 'select'
+    COLOR  = 'color'
+    MULTI  = 'multi'
