@@ -3,7 +3,7 @@
 
 from odoo import fields, models
 
-from .constants import *
+from .constants import AccountMoveType, SaleOrderState
 
 class UtmCampaign(models.Model):
     _inherit = 'utm.campaign'

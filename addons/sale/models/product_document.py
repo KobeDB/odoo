@@ -2,7 +2,7 @@
 
 from odoo import fields, models
 
-from .constants import *
+from .constants import AttachedOnSale
 
 class ProductDocument(models.Model):
     _inherit = 'product.document'

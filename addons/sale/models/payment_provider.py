@@ -3,7 +3,7 @@
 
 from odoo import fields, models
 
-from .constants import *
+from .constants import PaymentProviderSoReferenceType
 
 class PaymentProvider(models.Model):
     _inherit = 'payment.provider'

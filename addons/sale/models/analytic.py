@@ -3,7 +3,7 @@
 
 from odoo import fields, models
 
-from .constants import *
+from .constants import SaleOrderLineQtyDeliveredMethod
 
 class AccountAnalyticLine(models.Model):
     _inherit = "account.analytic.line"

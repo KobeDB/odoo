@@ -1,6 +1,6 @@
 from odoo import models, fields
 
-from .constants import *
+from .constants import AccountAccountType
 
 class ProductCategory(models.Model):
     _inherit = "product.category"

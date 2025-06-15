@@ -6,7 +6,7 @@ from dateutil import relativedelta
 from odoo import _, api, Command, fields, models, SUPERUSER_ID
 from odoo.tools import str2bool
 
-from .constants import *
+from .constants import PaymentProviderSoReferenceType, PaymentTransactionState, SaleOrderState, PaymentTransactionOperation, AccountJournalType, AccountMoveState
 
 
 class PaymentTransaction(models.Model):

@@ -8,7 +8,7 @@ from odoo.tools import float_round, format_list
 
 from odoo.addons.base.models.res_partner import WARNING_HELP, WARNING_MESSAGE
 
-from .constants import *
+from .constants import ProductTemplateServiceType, ProductTemplateExpensePolicy, ProductTemplateInvoicePolicy, ProductType
 
 class ProductTemplate(models.Model):
     _inherit = 'product.template'

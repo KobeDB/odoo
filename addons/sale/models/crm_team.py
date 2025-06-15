@@ -5,7 +5,7 @@ from odoo import api, fields, models, _
 from odoo.exceptions import UserError
 from odoo.tools import SQL
 
-from .constants import *
+from .constants import SaleOrderState, InvoiceStatus
 
 class CrmTeam(models.Model):
     _inherit = 'crm.team'
