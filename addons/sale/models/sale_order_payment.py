@@ -2,6 +2,8 @@ from .constants import SaleOrderState
 from odoo.addons.payment import utils as payment_utils
 from odoo import SUPERUSER_ID
 
+from .constants import *
+
 class SaleOrderPayment:
     def __init__(self, order):
         self.order = order
@@ -61,7 +63,7 @@ class SaleOrderPayment:
         # - we have still not paid enough for confirmation.
         prepayment_amount = self.order._get_prepayment_required_amount()
         if (
-            self.order.state in ('draft', 'sent')
+            self.order.state in (str(SaleOrderState.DRAFT), str(SaleOrderState.SENT))
             and self.order.require_payment
             and self.order.currency_id.compare_amounts(prepayment_amount, self.order.amount_paid) > 0
         ):
@@ -81,5 +83,5 @@ class SaleOrderPayment:
         """ Sum of the amount paid through all transactions for this SO. """
         for order in self.order:
             order.amount_paid = sum(
-                tx.amount for tx in order.transaction_ids if tx.state in ('authorized', 'done')
+                tx.amount for tx in order.transaction_ids if tx.state in (str(PaymentTransactionState.AUTHORIZED), str(PaymentTransactionState.DONE))
             )

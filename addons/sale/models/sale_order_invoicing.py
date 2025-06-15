@@ -2,7 +2,7 @@ from odoo import Command
 from odoo.tools import float_is_zero
 from itertools import groupby
 
-from .constants import AccountMoveLineDisplayType, AccountMoveState, AccountType, SaleOrderState, InvoiceStatus, PaymentTransactionState, OrderLineDisplayType
+from .constants import *
 
 class SaleOrderInvoicing:
     def __init__(self, order):
@@ -30,7 +30,7 @@ class SaleOrderInvoicing:
                 if any(invoice_status == InvoiceStatus.NO for invoice_status in line_invoice_status):
                     # If only discount/delivery/promotion lines can be invoiced, the SO should not
                     # be invoiceable.
-                    invoiceable_domain = lines_domain + [('invoice_status', '=', 'to invoice')]
+                    invoiceable_domain = lines_domain + [('invoice_status', '=', str(InvoiceStatus.TO_INVOICE))]
                     invoiceable_lines = order.order_line.filtered_domain(invoiceable_domain)
                     special_lines = invoiceable_lines.filtered(
                         lambda sol: not sol._can_be_invoiced_alone()
@@ -234,14 +234,14 @@ class SaleOrderInvoicing:
 
         txs_to_be_linked = order.transaction_ids.sudo().filtered(
             lambda tx: (
-                tx.state in ('pending', 'authorized')
+                tx.state in (str(PaymentTransactionState.PENDING), str(PaymentTransactionState.AUTHORIZED))
                 or tx.state == PaymentTransactionState.DONE and not (tx.payment_id and tx.payment_id.is_reconciled)
             )
         )
 
         values = {
             'ref': order.client_order_ref or '',
-            'move_type': 'out_invoice',
+            'move_type': str(AccountMoveType.OUT_INVOICE),
             'narration': order.note,
             'currency_id': order.currency_id.id,
             'campaign_id': order.campaign_id.id,
@@ -286,7 +286,7 @@ class SaleOrderInvoicing:
             action = {'type': 'ir.actions.act_window_close'}
 
         context = {
-            'default_move_type': 'out_invoice',
+            'default_move_type': str(AccountMoveType.OUT_INVOICE),
         }
         if len(self.order) == 1:
             context.update({

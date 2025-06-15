@@ -3,6 +3,8 @@ from .constants import AttachedOnSale, SaleOrderState
 from odoo import _
 from odoo.http import request
 
+from .constants import *
+
 class SaleOrderBusiness:
     def __init__(self, order):
         self.order = order
@@ -50,7 +52,7 @@ class SaleOrderBusiness:
         self.order.ensure_one()
         context = {'lang': self.order.partner_id.lang}
         down_payments_section_line = {
-            'display_type': 'line_section',
+            'display_type': str(OrderLineDisplayType.LINE_SECTION),
             'name': _("Down Payments"),
             'product_id': False,
             'product_uom_id': False,
@@ -102,7 +104,7 @@ class SaleOrderBusiness:
         for order in self.order:
             downpayment_wizard = order.env['sale.advance.payment.inv'].create({
                 'sale_order_ids': order,
-                'advance_payment_method': 'fixed',
+                'advance_payment_method': str(SaleAdvancePaymentMethod.FIXED),
                 'fixed_amount': order.amount_paid,
             })
             generated_invoices |= downpayment_wizard._create_invoices(order)
@@ -119,9 +121,9 @@ class SaleOrderBusiness:
         )
         for product in products:
             res[product.id]['price'] = pricelist.get(product.id)
-            if product.sale_line_warn != 'no-message' and product.sale_line_warn_msg:
+            if product.sale_line_warn != WarningMessage.NO_MESSAGE and product.sale_line_warn_msg:
                 res[product.id]['warning'] = product.sale_line_warn_msg
-            if product.sale_line_warn == "block":
+            if product.sale_line_warn == WarningMessage.BLOCK:
                 res[product.id]['readOnly'] = True
         return res
     
@@ -162,7 +164,7 @@ class SaleOrderBusiness:
         if sol:
             if quantity != 0:
                 sol.product_uom_qty = quantity
-            elif self.order.state in ['draft', 'sent']:
+            elif self.order.state in [str(SaleOrderState.DRAFT), str(SaleOrderState.SENT)]:
                 price_unit = self.order.pricelist_id._get_product_price(
                     product=sol.product_id,
                     quantity=1.0,

@@ -1,3 +1,5 @@
+from .constants import *
+
 class SaleOrderPortal:
     def __init__(self, order):
         self.order = order
@@ -17,7 +19,7 @@ class SaleOrderPortal:
         """
         self.order.ensure_one()
         return (
-            self.order.state in ['draft', 'sent']
+            self.order.state in [str(SaleOrderState.DRAFT), str(SaleOrderState.SENT)]
             and not self.order.is_expired
             and self.order.require_signature
             and not self.order.signature
@@ -39,7 +41,7 @@ class SaleOrderPortal:
         """
         self.order.ensure_one()
         return (
-            self.order.state in ['draft', 'sent']
+            self.order.state in [str(SaleOrderState.DRAFT), str(SaleOrderState.SENT)]
             and not self.order.is_expired
             and self.order.require_payment
             and self.order.amount_total > 0

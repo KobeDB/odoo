@@ -1,5 +1,5 @@
 from odoo import fields
-from .constants import EarlyPayDiscountComputation
+from .constants import *
 
 class SaleOrderPricing:
     def __init__(self, order):
@@ -49,7 +49,7 @@ class SaleOrderPricing:
         pt = self.order.payment_term_id
         if not (
             pt.early_discount and
-            pt.early_pay_discount_computation == 'mixed' and
+            pt.early_pay_discount_computation == EarlyPayDiscountComputation.MIXED and
             pt.discount_percentage
         ):
             return []

@@ -4,6 +4,8 @@ from odoo.tools import format_amount
 from odoo import _, SUPERUSER_ID
 from odoo.http import request
 
+from .constants import *
+
 class SaleOrderCommunication:
     def __init__(self, order):
         self.order = order
@@ -11,20 +13,20 @@ class SaleOrderCommunication:
     
     def action_quotation_send(self):
         """ Opens a wizard to compose an email, with relevant mail template loaded by default """
-        self.order.filtered(lambda so: so.state in ('draft', 'sent')).order_line._validate_analytic_distribution()
+        self.order.filtered(lambda so: so.state in (str(SaleOrderState.DRAFT), str(SaleOrderState.SENT))).order_line._validate_analytic_distribution()
         lang = self.env.context.get('lang')
 
         ctx = {
             'default_model': 'sale.order',
             'default_res_ids': self.order.ids,
-            'default_composition_mode': 'comment',
+            'default_composition_mode': str(MailCompositionMode.COMMENT),
             'default_email_layout_xmlid': 'mail.mail_notification_layout_with_responsible_signature',
             'email_notification_allow_footer': True,
             'proforma': self.env.context.get('proforma', False),
         }
 
         if len(self.order) > 1:
-            ctx['default_composition_mode'] = 'mass_mail'
+            ctx['default_composition_mode'] = str(MailCompositionMode.MASS_MAIL)
         else:
             ctx.update({
                 'force_email': True,
@@ -77,7 +79,7 @@ class SaleOrderCommunication:
         :rtype: record of `mail.template` or `None` if not found
         """
         self.order.ensure_one()
-        if self.env.context.get('proforma') or self.order.state != 'sale':
+        if self.env.context.get('proforma') or self.order.state != SaleOrderState.SALE:
             return self.env.ref('sale.email_template_edi_sale', raise_if_not_found=False)
         else:
             return self._get_confirmation_template()
@@ -111,13 +113,13 @@ class SaleOrderCommunication:
 
         :raise: UserError if any given SO is not in draft state.
         """
-        if any(order.state != 'draft' for order in self.order):
+        if any(order.state != SaleOrderState.DRAFT for order in self.order):
             raise UserError(_("Only draft orders can be marked as sent directly."))
 
         for order in self.order:
             order.message_subscribe(partner_ids=order.partner_id.ids)
 
-        self.order.write({'state': 'sent'})
+        self.order.write({'state': str(SaleOrderState.SENT)})
     
     def _notify_get_recipients_groups(self, groups, msg_vals=None):
         """ Give access button to users and portal customer as portal is integrated
@@ -148,7 +150,7 @@ class SaleOrderCommunication:
                     access_opt['title'] = _("Accept & Sign Quotation")
             elif self.order._has_to_be_paid() and not is_tx_pending:
                 access_opt['title'] = _("Accept & Pay Quotation")
-            elif self.order.state in ('draft', 'sent'):
+            elif self.order.state in (str(SaleOrderState.DRAFT), str(SaleOrderState.SENT)):
                 access_opt['title'] = _("View Quotation")
 
         # enable followers that have access through portal
@@ -156,7 +158,7 @@ class SaleOrderCommunication:
         follower_group[2]['active'] = True
         follower_group[2]['has_button_access'] = True
         access_opt = follower_group[2].setdefault('button_access', {})
-        if self.order.state in ('draft', 'sent'):
+        if self.order.state in (str(SaleOrderState.DRAFT), str(SaleOrderState.SENT)):
             access_opt['title'] = _("View Quotation")
         else:
             access_opt['title'] = _("View Order")
@@ -180,7 +182,7 @@ class SaleOrderCommunication:
     def prepare_message_post_kwargs(self, kwargs):
         order = self.order
         if self.env.context.get('mark_so_as_sent'):
-            order.filtered(lambda o: o.state == SaleOrderState.DRAFT).with_context(tracking_disable=True).write({'state': 'sent'})
+            order.filtered(lambda o: o.state == SaleOrderState.DRAFT).with_context(tracking_disable=True).write({'state': str(SaleOrderState.SENT)})
         so_ctx = {'mail_post_autofollow': self.env.context.get('mail_post_autofollow', True)}
         if self.env.context.get('mark_so_as_sent') and 'mail_notify_author' not in kwargs:
             kwargs = kwargs.copy()

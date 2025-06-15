@@ -193,3 +193,9 @@ class SaleOnboardingPaymentMethod(StrEnum):
 class MailCompositionMode(StrEnum):
     COMMENT = 'comment'
     MASS_MAIL = 'mass_mail'
+
+""" advance_payment_method in sale/wizard/sale_make_invoice_advance.py """
+class SaleAdvancePaymentMethod(StrEnum):
+    DELIVERED = 'delivered'
+    PERCENTAGE = 'percentage'
+    FIXED = 'fixed'

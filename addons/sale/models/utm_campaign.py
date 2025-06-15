@@ -3,6 +3,8 @@
 
 from odoo import fields, models
 
+from .constants import *
+
 class UtmCampaign(models.Model):
     _inherit = 'utm.campaign'
     _description = 'UTM Campaign'
@@ -61,9 +63,17 @@ class UtmCampaign(models.Model):
             'edit': False,
             'view_no_maturity': True
         }
+        move_type_tuple = tuple( str(ty) for ty in (
+            AccountMoveType.OUT_INVOICE,
+            AccountMoveType.OUT_REFUND,
+            AccountMoveType.IN_INVOICE,
+            AccountMoveType.IN_REFUND,
+            AccountMoveType.OUT_RECEIPT,
+            AccountMoveType.IN_RECEIPT,
+        ))
         action['domain'] = [
             ('id', 'in', invoices.ids),
-            ('move_type', 'in', ('out_invoice', 'out_refund', 'in_invoice', 'in_refund', 'out_receipt', 'in_receipt')),
-            ('state', 'not in', ['draft', 'cancel'])
+            ('move_type', 'in', move_type_tuple),
+            ('state', 'not in', [str(SaleOrderState.DRAFT), str(SaleOrderState.CANCEL)])
         ]
         return action
