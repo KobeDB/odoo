@@ -152,74 +152,77 @@ class SaleAdvancePaymentInv(models.TransientModel):
         self.ensure_one()
         if self.advance_payment_method == 'delivered':
             return sale_orders._create_invoices(final=self.deduct_down_payments, grouped=not self.consolidated_billing)
-        else:
-            self.sale_order_ids.ensure_one()
-            self = self.with_company(self.company_id)
-            order = self.sale_order_ids
+        self.sale_order_ids.ensure_one()
+        self = self.with_company(self.company_id)
+        order = self.sale_order_ids
 
-            # Create down payment section if necessary
-            SaleOrderline = self.env['sale.order.line'].with_context(sale_no_log_for_new_lines=True)
-            if not any(line.display_type and line.is_downpayment for line in order.order_line):
-                SaleOrderline.create(
-                    self._prepare_down_payment_section_values(order)
+        # Create down payment section if necessary
+        SaleOrderline = self.env['sale.order.line'].with_context(sale_no_log_for_new_lines=True)
+        if not any(line.display_type and line.is_downpayment for line in order.order_line):
+            SaleOrderline.create(
+                self._prepare_down_payment_section_values(order)
+            )
+
+        values, accounts = self._prepare_down_payment_lines_values(order)
+        down_payment_lines = SaleOrderline.create(values)
+
+        invoice = self.env['account.move'].sudo().create(
+            self._prepare_invoice_values(order, down_payment_lines, accounts)
+        )
+
+        # Ensure the invoice total is exactly the expected fixed amount.
+        if self.advance_payment_method == 'fixed':
+            delta_amount = (invoice.amount_total - self.fixed_amount) * (1 if invoice.is_inbound() else -1)
+            if not order.currency_id.is_zero(delta_amount):
+                receivable_line = invoice.line_ids\
+                    .filtered(lambda aml: aml.account_id.account_type == 'asset_receivable')[:1]
+                product_lines = invoice.line_ids\
+                    .filtered(lambda aml: aml.display_type == 'product')
+                tax_lines = invoice.line_ids\
+                    .filtered(lambda aml: aml.tax_line_id.amount_type not in (False, 'fixed'))
+
+                if product_lines and tax_lines and receivable_line:
+                    line_commands = [Command.update(receivable_line.id, {
+                        'amount_currency': receivable_line.amount_currency + delta_amount,
+                    })]
+                    self._update_lines(invoice, order, delta_amount, line_commands, product_lines, tax_lines)
+
+
+        # Unsudo the invoice after creation if not already sudoed
+        invoice = invoice.sudo(self.env.su)
+
+        poster = self.env.user._is_internal() and self.env.user.id or SUPERUSER_ID
+        invoice.with_user(poster).message_post_with_source(
+            'mail.message_origin_link',
+            render_values={'self': invoice, 'origin': order},
+            subtype_xmlid='mail.mt_note',
+        )
+
+        title = _("Down payment invoice")
+        order.with_user(poster).message_post(
+            body=_("%s has been created", invoice._get_html_link(title=title)),
+        )
+
+        return invoice
+
+    def _update_lines(self, invoice, order, delta_amount, line_commands, product_lines, tax_lines):
+        delta_sign = 1 if delta_amount > 0 else -1
+        for lines, attr, sign in (
+                (product_lines, 'price_total', -1),
+                (tax_lines, 'amount_currency', 1),
+        ):
+            remaining = delta_amount
+            lines_len = len(lines)
+            for line in lines:
+                if order.currency_id.compare_amounts(remaining, 0) != delta_sign:
+                    break
+                amt = delta_sign * max(
+                    order.currency_id.rounding,
+                    abs(order.currency_id.round(remaining / lines_len)),
                 )
-
-            values, accounts = self._prepare_down_payment_lines_values(order)
-            down_payment_lines = SaleOrderline.create(values)
-
-            invoice = self.env['account.move'].sudo().create(
-                self._prepare_invoice_values(order, down_payment_lines, accounts)
-            )
-
-            # Ensure the invoice total is exactly the expected fixed amount.
-            if self.advance_payment_method == 'fixed':
-                delta_amount = (invoice.amount_total - self.fixed_amount) * (1 if invoice.is_inbound() else -1)
-                if not order.currency_id.is_zero(delta_amount):
-                    receivable_line = invoice.line_ids\
-                        .filtered(lambda aml: aml.account_id.account_type == 'asset_receivable')[:1]
-                    product_lines = invoice.line_ids\
-                        .filtered(lambda aml: aml.display_type == 'product')
-                    tax_lines = invoice.line_ids\
-                        .filtered(lambda aml: aml.tax_line_id.amount_type not in (False, 'fixed'))
-
-                    if product_lines and tax_lines and receivable_line:
-                        line_commands = [Command.update(receivable_line.id, {
-                            'amount_currency': receivable_line.amount_currency + delta_amount,
-                        })]
-                        delta_sign = 1 if delta_amount > 0 else -1
-                        for lines, attr, sign in (
-                            (product_lines, 'price_total', -1),
-                            (tax_lines, 'amount_currency', 1),
-                        ):
-                            remaining = delta_amount
-                            lines_len = len(lines)
-                            for line in lines:
-                                if order.currency_id.compare_amounts(remaining, 0) != delta_sign:
-                                    break
-                                amt = delta_sign * max(
-                                    order.currency_id.rounding,
-                                    abs(order.currency_id.round(remaining / lines_len)),
-                                )
-                                remaining -= amt
-                                line_commands.append(Command.update(line.id, {attr: line[attr] + amt * sign}))
-                        invoice.line_ids = line_commands
-
-            # Unsudo the invoice after creation if not already sudoed
-            invoice = invoice.sudo(self.env.su)
-
-            poster = self.env.user._is_internal() and self.env.user.id or SUPERUSER_ID
-            invoice.with_user(poster).message_post_with_source(
-                'mail.message_origin_link',
-                render_values={'self': invoice, 'origin': order},
-                subtype_xmlid='mail.mt_note',
-            )
-
-            title = _("Down payment invoice")
-            order.with_user(poster).message_post(
-                body=_("%s has been created", invoice._get_html_link(title=title)),
-            )
-
-            return invoice
+                remaining -= amt
+                line_commands.append(Command.update(line.id, {attr: line[attr] + amt * sign}))
+        invoice.line_ids = line_commands
 
     def _prepare_down_payment_section_values(self, order):
         return {
@@ -240,10 +243,9 @@ class SaleAdvancePaymentInv(models.TransientModel):
         self.ensure_one()
         AccountTax = self.env['account.tax']
 
+        ratio = self.fixed_amount / order.amount_total if order.amount_total else 1
         if self.advance_payment_method == 'percentage':
             ratio = self.amount / 100
-        else:
-            ratio = self.fixed_amount / order.amount_total if order.amount_total else 1
 
         order_lines = order.order_line.filtered(lambda l: not l.display_type and not l.is_downpayment)
         down_payment_values = []
@@ -262,25 +264,7 @@ class SaleAdvancePaymentInv(models.TransientModel):
                 tax_details['raw_total_excluded_currency'],
                 account,
             ])
-            for fixed_tax in fixed_taxes:
-                # Fixed taxes cannot be set as taxes on down payments as they always amounts to 100%
-                # of the tax amount. Therefore fixed taxes are removed and are replace by a new line
-                # with appropriate amount, and non fixed taxes if the fixed tax affected the base of
-                # any other non fixed tax.
-                if fixed_tax.price_include:
-                    continue
-
-                if fixed_tax.include_base_amount:
-                    pct_tax = taxes[list(taxes).index(fixed_tax) + 1:]\
-                        .filtered(lambda t: t.is_base_affected and t.amount_type != 'fixed')
-                else:
-                    pct_tax = self.env['account.tax']
-                down_payment_values.append([
-                    pct_tax,
-                    base_line_values['analytic_distribution'],
-                    base_line_values['quantity'] * fixed_tax.amount,
-                    account
-                ])
+            self._handle_fixed_tax(taxes, fixed_taxes, down_payment_values, base_line_values, account)
 
         downpayment_line_map = {}
         analytic_map = {}
@@ -301,6 +285,30 @@ class SaleAdvancePaymentInv(models.TransientModel):
                 analytic_map.setdefault(grouping_key, [])
                 analytic_map[grouping_key].append((price_subtotal, analytic_distribution))
 
+        return self._adjust_line_values(order, analytic_map, downpayment_line_map, ratio)
+
+    def _handle_fixed_tax(self, taxes, fixed_taxes, down_payment_values, base_line_values, account):
+        for fixed_tax in fixed_taxes:
+            # Fixed taxes cannot be set as taxes on down payments as they always amounts to 100%
+            # of the tax amount. Therefore fixed taxes are removed and are replace by a new line
+            # with appropriate amount, and non fixed taxes if the fixed tax affected the base of
+            # any other non fixed tax.
+            if fixed_tax.price_include:
+                continue
+
+            if fixed_tax.include_base_amount:
+                pct_tax = taxes[list(taxes).index(fixed_tax) + 1:] \
+                    .filtered(lambda t: t.is_base_affected and t.amount_type != 'fixed')
+            else:
+                pct_tax = self.env['account.tax']
+            down_payment_values.append([
+                pct_tax,
+                base_line_values['analytic_distribution'],
+                base_line_values['quantity'] * fixed_tax.amount,
+                account
+            ])
+
+    def _adjust_line_values(self, order, analytic_map, downpayment_line_map, ratio):
         lines_values = []
         accounts = []
         for key, line_vals in downpayment_line_map.items():
@@ -320,7 +328,6 @@ class SaleAdvancePaymentInv(models.TransientModel):
 
             lines_values.append(line_vals)
             accounts.append(key['account_id'])
-
         return lines_values, accounts
 
     def _prepare_base_downpayment_line_values(self, order):

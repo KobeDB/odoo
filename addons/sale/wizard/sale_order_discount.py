@@ -98,22 +98,10 @@ class SaleOrderDiscount(models.TransientModel):
         self.ensure_one()
         discount_product = self._get_discount_product()
 
-        if self.discount_type == 'amount':
-            if not self.sale_order_id.amount_total:
-                return
-            so_amount = self.sale_order_id.amount_total
-            # Fixed taxes cannot be discounted, so they cannot be considered in the total amount
-            # when computing the discount percentage.
-            if any(tax.amount_type == 'fixed' for tax in self.sale_order_id.order_line.tax_id.flatten_taxes_hierarchy()):
-                fixed_taxes_amount = 0
-                for line in self.sale_order_id.order_line:
-                    taxes = line.tax_id.flatten_taxes_hierarchy()
-                    for tax in taxes.filtered(lambda tax: tax.amount_type == 'fixed'):
-                        fixed_taxes_amount += tax.amount * line.product_uom_qty
-                so_amount -= fixed_taxes_amount
-            discount_percentage = self.discount_amount / so_amount
-        else: # so_discount
-            discount_percentage = self.discount_percentage
+
+
+        discount_percentage = self._handle_discount_type()
+
         total_price_per_tax_groups = defaultdict(float)
         for line in self.sale_order_id.order_line:
             if not line.product_uom_qty or not line.price_unit:
@@ -164,6 +152,25 @@ class SaleOrderDiscount(models.TransientModel):
                 )
                 vals_list.append(discount_line_value)
         return self.env['sale.order.line'].create(vals_list)
+
+    def _handle_discount_type(self):
+        if self.discount_type == 'amount':
+            if not self.sale_order_id.amount_total:
+                return
+            so_amount = self.sale_order_id.amount_total
+            # Fixed taxes cannot be discounted, so they cannot be considered in the total amount
+            # when computing the discount percentage.
+            if any(tax.amount_type == 'fixed' for tax in self.sale_order_id.order_line.tax_id.flatten_taxes_hierarchy()):
+                fixed_taxes_amount = 0
+                for line in self.sale_order_id.order_line:
+                    taxes = line.tax_id.flatten_taxes_hierarchy()
+                    for tax in taxes.filtered(lambda tax: tax.amount_type == 'fixed'):
+                        fixed_taxes_amount += tax.amount * line.product_uom_qty
+                so_amount -= fixed_taxes_amount
+            discount_percentage = self.discount_amount / so_amount
+        else: # so_discount
+            discount_percentage = self.discount_percentage
+        return discount_percentage
 
     def action_apply_discount(self):
         self.ensure_one()

@@ -130,48 +130,10 @@ class SaleOrderInvoicing:
 
                 delta_amount = 0
                 for order_line in self.order.order_line:
-                    if not order_line.is_downpayment:
-                        continue
-                    inv_amt = order_amt = 0
-                    for invoice_line in order_line.invoice_lines:
-                        sign = 1 if invoice_line.move_id.is_inbound() else -1
-                        if invoice_line.move_id == move:
-                            inv_amt += invoice_line.price_total * sign
-                        elif invoice_line.move_id.state != AccountMoveState.CANCEL:  # filter out canceled dp lines
-                            order_amt += invoice_line.price_total * sign
-                    if inv_amt and order_amt:
-                        # if not inv_amt, this order line is not related to current move
-                        # if no order_amt, dp order line was not invoiced
-                        delta_amount += inv_amt + order_amt
+                    delta_amount += self._downpayment_delta(move, order_line)
 
                 if not move.currency_id.is_zero(delta_amount):
-                    receivable_line = move.line_ids.filtered(
-                        lambda aml: aml.account_id.account_type == AccountType.ASSET_RECEIVABLE)[:1]
-                    product_lines = move.line_ids.filtered(
-                        lambda aml: aml.display_type == AccountMoveLineDisplayType.PRODUCT and aml.is_downpayment)
-                    tax_lines = move.line_ids.filtered(
-                        lambda aml: aml.tax_line_id.amount_type not in (False, 'fixed'))
-                    if tax_lines and product_lines and receivable_line:
-                        line_commands = [Command.update(receivable_line.id, {
-                            'amount_currency': receivable_line.amount_currency + delta_amount,
-                        })]
-                        delta_sign = 1 if delta_amount > 0 else -1
-                        for lines, attr, sign in (
-                            (product_lines, 'price_total', -1 if move.is_inbound() else 1),
-                            (tax_lines, 'amount_currency', 1),
-                        ):
-                            remaining = delta_amount
-                            lines_len = len(lines)
-                            for line in lines:
-                                if move.currency_id.compare_amounts(remaining, 0) != delta_sign:
-                                    break
-                                amt = delta_sign * max(
-                                    move.currency_id.rounding,
-                                    abs(move.currency_id.round(remaining / lines_len)),
-                                )
-                                remaining -= amt
-                                line_commands.append(Command.update(line.id, {attr: line[attr] + amt * sign}))
-                        move.line_ids = line_commands
+                    self._changing_downpayment(move, delta_amount)
 
             move.message_post_with_source(
                 'mail.message_origin_link',
@@ -179,6 +141,36 @@ class SaleOrderInvoicing:
                 subtype_xmlid='mail.mt_note',
             )
         return moves
+
+    def _downpayment_delta(self, move, order_line):
+        if not order_line.is_downpayment:
+            return 0
+        inv_amt = order_amt = 0
+        for invoice_line in order_line.invoice_lines:
+            sign = 1 if invoice_line.move_id.is_inbound() else -1
+            if invoice_line.move_id == move:
+                inv_amt += invoice_line.price_total * sign
+            elif invoice_line.move_id.state != AccountMoveState.CANCEL:  # filter out canceled dp lines
+                order_amt += invoice_line.price_total * sign
+        if inv_amt and order_amt:
+            # if not inv_amt, this order line is not related to current move
+            # if no order_amt, dp order line was not invoiced
+            return inv_amt + order_amt
+        return 0
+
+    def _changing_downpayment(self, move, delta_amount):
+        receivable_line = move.line_ids.filtered(
+            lambda aml: aml.account_id.account_type == AccountType.ASSET_RECEIVABLE)[:1]
+        product_lines = move.line_ids.filtered(
+            lambda aml: aml.display_type == AccountMoveLineDisplayType.PRODUCT and aml.is_downpayment)
+        tax_lines = move.line_ids.filtered(
+            lambda aml: aml.tax_line_id.amount_type not in (False, 'fixed'))
+        if tax_lines and product_lines and receivable_line:
+            line_commands = [Command.update(receivable_line.id, {
+                'amount_currency': receivable_line.amount_currency + delta_amount,
+            })]
+            self._update_lines(move, delta_amount, line_commands, product_lines, tax_lines)
+
     
     def _create_account_invoices(self, invoice_vals_list, final):
         """Small method to allow overriding the behavior right after an invoice is created."""
@@ -211,6 +203,25 @@ class SaleOrderInvoicing:
                 invoiceable_line_ids.append(line.id)
 
         return self.env['sale.order.line'].browse(invoiceable_line_ids + down_payment_line_ids)
+
+    def _update_lines(self, move, delta_amount, line_commands, product_lines, tax_lines):
+        delta_sign = 1 if delta_amount > 0 else -1
+        for lines, attr, sign in (
+                (product_lines, 'price_total', -1 if move.is_inbound() else 1),
+                (tax_lines, 'amount_currency', 1),
+        ):
+            remaining = delta_amount
+            lines_len = len(lines)
+            for line in lines:
+                if move.currency_id.compare_amounts(remaining, 0) != delta_sign:
+                    break
+                amt = delta_sign * max(
+                    move.currency_id.rounding,
+                    abs(move.currency_id.round(remaining / lines_len)),
+                )
+                remaining -= amt
+                line_commands.append(Command.update(line.id, {attr: line[attr] + amt * sign}))
+        move.line_ids = line_commands
 
     @staticmethod
     def _nothing_to_invoice_error_message():
